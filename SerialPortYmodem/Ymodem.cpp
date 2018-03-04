@@ -55,6 +55,11 @@ static uint16_t YmodemCRC16(uint8_t *buff, uint32_t len);
 
 /* Function definitions ------------------------------------------------------*/
 
+/**
+  * @brief  Ymodem receives a packet of data.
+  * @param  [in] ymodem: The ymodem to be transmissioned.
+  * @return Packet type.
+  */
 static YmodemCode YmodemReceivePacket(Ymodem *ymodem)
 {
   if(ymodem->code == YmodemCodeNone)
@@ -148,6 +153,11 @@ static YmodemCode YmodemReceivePacket(Ymodem *ymodem)
   }
 }
 
+/**
+  * @brief  Ymodem receive none stage.
+  * @param  [in] ymodem: The ymodem to be received.
+  * @return None.
+  */
 static void YmodemReceiveStageNone(Ymodem *ymodem)
 {
   ymodem->timeCount   = 0;
@@ -160,6 +170,11 @@ static void YmodemReceiveStageNone(Ymodem *ymodem)
   ymodem->write(ymodem->txBuffer, ymodem->txLength);
 }
 
+/**
+  * @brief  Ymodem receive establishing stage.
+  * @param  [in] ymodem: The ymodem to be received.
+  * @return None.
+  */
 static void YmodemReceiveStageEstablishing(Ymodem *ymodem)
 {
   switch(YmodemReceivePacket(ymodem))
@@ -277,6 +292,11 @@ static void YmodemReceiveStageEstablishing(Ymodem *ymodem)
   }
 }
 
+/**
+  * @brief  Ymodem receive established stage.
+  * @param  [in] ymodem: The ymodem to be received.
+  * @return None.
+  */
 static void YmodemReceiveStageEstablished(Ymodem *ymodem)
 {
   switch(YmodemReceivePacket(ymodem))
@@ -504,6 +524,11 @@ static void YmodemReceiveStageEstablished(Ymodem *ymodem)
   }
 }
 
+/**
+  * @brief  Ymodem receive transmitting stage.
+  * @param  [in] ymodem: The ymodem to be received.
+  * @return None.
+  */
 static void YmodemReceiveStageTransmitting(Ymodem *ymodem)
 {
   switch(YmodemReceivePacket(ymodem))
@@ -758,6 +783,11 @@ static void YmodemReceiveStageTransmitting(Ymodem *ymodem)
   }
 }
 
+/**
+  * @brief  Ymodem receive finishing stage.
+  * @param  [in] ymodem: The ymodem to be received.
+  * @return None.
+  */
 static void YmodemReceiveStageFinishing(Ymodem *ymodem)
 {
   switch(YmodemReceivePacket(ymodem))
@@ -821,6 +851,11 @@ static void YmodemReceiveStageFinishing(Ymodem *ymodem)
   }
 }
 
+/**
+  * @brief  Ymodem receive finished stage.
+  * @param  [in] ymodem: The ymodem to be received.
+  * @return None.
+  */
 static void YmodemReceiveStageFinished(Ymodem *ymodem)
 {
   switch(YmodemReceivePacket(ymodem))
@@ -949,6 +984,11 @@ static void YmodemReceiveStageFinished(Ymodem *ymodem)
   }
 }
 
+/**
+  * @brief  Ymodem transmit none stage.
+  * @param  [in] ymodem: The ymodem to be transmitted.
+  * @return None.
+  */
 static void YmodemTransmitStageNone(Ymodem *ymodem)
 {
   ymodem->timeCount   = 0;
@@ -958,6 +998,11 @@ static void YmodemTransmitStageNone(Ymodem *ymodem)
   ymodem->stage       = YmodemStageEstablishing;
 }
 
+/**
+  * @brief  Ymodem transmit establishing stage.
+  * @param  [in] ymodem: The ymodem to be transmitted.
+  * @return None.
+  */
 static void YmodemTransmitStageEstablishing(Ymodem *ymodem)
 {
   switch(YmodemReceivePacket(ymodem))
@@ -1040,6 +1085,11 @@ static void YmodemTransmitStageEstablishing(Ymodem *ymodem)
   }
 }
 
+/**
+  * @brief  Ymodem transmit established stage.
+  * @param  [in] ymodem: The ymodem to be transmitted.
+  * @return None.
+  */
 static void YmodemTransmitStageEstablished(Ymodem *ymodem)
 {
   switch(YmodemReceivePacket(ymodem))
@@ -1206,6 +1256,11 @@ static void YmodemTransmitStageEstablished(Ymodem *ymodem)
   }
 }
 
+/**
+  * @brief  Ymodem transmit transmitting stage.
+  * @param  [in] ymodem: The ymodem to be transmitted.
+  * @return None.
+  */
 static void YmodemTransmitStageTransmitting(Ymodem *ymodem)
 {
   switch(YmodemReceivePacket(ymodem))
@@ -1340,6 +1395,11 @@ static void YmodemTransmitStageTransmitting(Ymodem *ymodem)
   }
 }
 
+/**
+  * @brief  Ymodem transmit finishing stage.
+  * @param  [in] ymodem: The ymodem to be transmitted.
+  * @return None.
+  */
 static void YmodemTransmitStageFinishing(Ymodem *ymodem)
 {
   switch(YmodemReceivePacket(ymodem))
@@ -1421,6 +1481,11 @@ static void YmodemTransmitStageFinishing(Ymodem *ymodem)
   }
 }
 
+/**
+  * @brief  Ymodem transmit finished stage.
+  * @param  [in] ymodem: The ymodem to be transmitted.
+  * @return None.
+  */
 static void YmodemTransmitStageFinished(Ymodem *ymodem)
 {
   switch(YmodemReceivePacket(ymodem))
@@ -1508,6 +1573,12 @@ static void YmodemTransmitStageFinished(Ymodem *ymodem)
   }
 }
 
+/**
+  * @brief  Calculate ymodem CRC16 checksum.
+  * @param  [in] buff: The data to be calculated.
+  * @param  [in] len:  The length of the data to be calculated.
+  * @return Calculated CRC16 checksum.
+  */
 static uint16_t YmodemCRC16(uint8_t *buff, uint32_t len)
 {
   uint16_t crc = 0;
@@ -1532,6 +1603,11 @@ static uint16_t YmodemCRC16(uint8_t *buff, uint32_t len)
   return crc;
 }
 
+/**
+  * @brief  Ymodem receive.
+  * @param  [in] ymodem: The ymodem to be receive.
+  * @return None.
+  */
 void YmodemReceive(Ymodem *ymodem)
 {
   switch(ymodem->stage)
@@ -1578,6 +1654,11 @@ void YmodemReceive(Ymodem *ymodem)
   }
 }
 
+/**
+  * @brief  Ymodem transmit.
+  * @param  [in] ymodem: The ymodem to be transmit.
+  * @return None.
+  */
 void YmodemTransmit(Ymodem *ymodem)
 {
   switch(ymodem->stage)
@@ -1624,6 +1705,11 @@ void YmodemTransmit(Ymodem *ymodem)
   }
 }
 
+/**
+  * @brief  Abort ymodem transmission.
+  * @param  [in] ymodem: The ymodem to be abort.
+  * @return None.
+  */
 void YmodemAbort(Ymodem *ymodem)
 {
   ymodem->timeCount  = 0;
