@@ -35,1551 +35,1738 @@
 /* Variable declarations -----------------------------------------------------*/
 /* Variable definitions ------------------------------------------------------*/
 /* Function declarations -----------------------------------------------------*/
-static YmodemCode YmodemReceivePacket(Ymodem *ymodem);
-
-static void YmodemReceiveStageNone(Ymodem *ymodem);
-static void YmodemReceiveStageEstablishing(Ymodem *ymodem);
-static void YmodemReceiveStageEstablished(Ymodem *ymodem);
-static void YmodemReceiveStageTransmitting(Ymodem *ymodem);
-static void YmodemReceiveStageFinishing(Ymodem *ymodem);
-static void YmodemReceiveStageFinished(Ymodem *ymodem);
-
-static void YmodemTransmitStageNone(Ymodem *ymodem);
-static void YmodemTransmitStageEstablishing(Ymodem *ymodem);
-static void YmodemTransmitStageEstablished(Ymodem *ymodem);
-static void YmodemTransmitStageTransmitting(Ymodem *ymodem);
-static void YmodemTransmitStageFinishing(Ymodem *ymodem);
-static void YmodemTransmitStageFinished(Ymodem *ymodem);
-
-static uint16_t YmodemCRC16(uint8_t *buff, uint32_t len);
-
 /* Function definitions ------------------------------------------------------*/
 
 /**
-  * @brief  Ymodem receives a packet of data.
-  * @param  [in] ymodem: The ymodem to be transmissioned.
+  * @brief  Ymodem constructor.
+  * @param  [in] timeDivide: The fractional factor of the time the ymodem is called.
+  * @param  [in] timeMax:    The maximum time when calling the ymodem.
+  * @param  [in] errorMax:   The maximum error count when calling the ymodem.
+  * @note   The longest waiting time = call time / (@timeDivide + 1) * (@timeMax + 1).
+  * @return None.
+  */
+Ymodem::Ymodem(uint32_t timeDivide, uint32_t timeMax, uint32_t errorMax)
+{
+  this->timeDivide = timeDivide;
+  this->timeMax    = timeMax;
+  this->errorMax   = errorMax;
+
+  this->timeCount  = 0;
+  this->errorCount = 0;
+  this->dataCount  = 0;
+
+  this->code       = CodeNone;
+  this->stage      = StageNone;
+}
+
+/**
+  * @brief  Set the fractional factor of the time the ymodem is called.
+  * @param  [in] timeDivide: The fractional factor of the time the ymodem is called.
+  * @return None.
+  */
+void Ymodem::setTimeDivide(uint32_t timeDivide)
+{
+  this->timeDivide = timeDivide;
+}
+
+/**
+  * @brief  Get the fractional factor of the time the ymodem is called.
+  * @param  None.
+  * @return The fractional factor of the time the ymodem is called.
+  */
+uint32_t Ymodem::getTimeDivide()
+{
+  return timeDivide;
+}
+
+/**
+  * @brief  Set the maximum time when calling the ymodem.
+  * @param  [in] timeMax: The maximum time when calling the ymodem.
+  * @return None.
+  */
+void Ymodem::setTimeMax(uint32_t timeMax)
+{
+  this->timeMax = timeMax;
+}
+
+/**
+  * @brief  Get the maximum time when calling the ymodem.
+  * @param  None.
+  * @return The maximum time when calling the ymodem.
+  */
+uint32_t Ymodem::getTimeMax()
+{
+  return timeMax;
+}
+
+/**
+  * @brief  Set the maximum error count when calling the ymodem.
+  * @param  [in] errorMax: The maximum error count when calling the ymodem.
+  * @return None.
+  */
+void Ymodem::setErrorMax(uint32_t errorMax)
+{
+  this->errorMax = errorMax;
+}
+
+/**
+  * @brief  Get the maximum error count when calling the ymodem.
+  * @param  None.
+  * @return The maximum error count when calling the ymodem.
+  */
+uint32_t Ymodem::getErrorMax()
+{
+  return errorMax;
+}
+
+/**
+  * @brief  Ymodem receive.
+  * @param  None.
+  * @return None.
+  */
+void Ymodem::receive()
+{
+  switch(stage)
+  {
+    case StageNone:
+    {
+      receiveStageNone();
+
+      break;
+    }
+
+    case StageEstablishing:
+    {
+      receiveStageEstablishing();
+
+      break;
+    }
+
+    case StageEstablished:
+    {
+      receiveStageEstablished();
+
+      break;
+    }
+
+    case StageTransmitting:
+    {
+      receiveStageTransmitting();
+
+      break;
+    }
+
+    case StageFinishing:
+    {
+      receiveStageFinishing();
+
+      break;
+    }
+
+    default:
+    {
+      receiveStageFinished();
+    }
+  }
+}
+
+/**
+  * @brief  Ymodem transmit.
+  * @param  None.
+  * @return None.
+  */
+void Ymodem::transmit()
+{
+  switch(stage)
+  {
+    case StageNone:
+    {
+      transmitStageNone();
+
+      break;
+    }
+
+    case StageEstablishing:
+    {
+      transmitStageEstablishing();
+
+      break;
+    }
+
+    case StageEstablished:
+    {
+      transmitStageEstablished();
+
+      break;
+    }
+
+    case StageTransmitting:
+    {
+      transmitStageTransmitting();
+
+      break;
+    }
+
+    case StageFinishing:
+    {
+      transmitStageFinishing();
+
+      break;
+    }
+
+    default:
+    {
+      transmitStageFinished();
+    }
+  }
+}
+
+/**
+  * @brief  Ymodem abort.
+  * @param  None.
+  * @return None.
+  */
+void Ymodem::abort()
+{
+  timeCount  = 0;
+  errorCount = 0;
+  dataCount  = 0;
+  code       = CodeNone;
+  stage      = StageNone;
+
+  for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
+  {
+    txBuffer[txLength] = CodeCan;
+  }
+
+  write(txBuffer, txLength);
+}
+
+/**
+  * @brief  Receives a packet of data.
+  * @param  None.
   * @return Packet type.
   */
-static YmodemCode YmodemReceivePacket(Ymodem *ymodem)
+Ymodem::Code Ymodem::receivePacket()
 {
-  if(ymodem->code == YmodemCodeNone)
+  if(code == CodeNone)
   {
-    if(ymodem->read(&(ymodem->rxBuffer[0]), 1) > 0)
+    if(read(&(rxBuffer[0]), 1) > 0)
     {
-      if(ymodem->rxBuffer[0] == YmodemCodeSoh)
+      if(rxBuffer[0] == CodeSoh)
       {
-        uint32_t len = ymodem->read(&(ymodem->rxBuffer[1]), YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD - 1);
+        uint32_t len = read(&(rxBuffer[1]), YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD - 1);
 
         if(len < (YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD - 1))
         {
-          ymodem->rxLength = len + 1;
-          ymodem->code     = YmodemCodeSoh;
+          rxLength = len + 1;
+          code     = CodeSoh;
 
-          return YmodemCodeNone;
+          return CodeNone;
         }
         else
         {
-          return YmodemCodeSoh;
+          return CodeSoh;
         }
       }
-      else if(ymodem->rxBuffer[0] == YmodemCodeStx)
+      else if(rxBuffer[0] == CodeStx)
       {
-        uint32_t len = ymodem->read(&(ymodem->rxBuffer[1]), YMODEM_PACKET_1K_SIZE + YMODEM_PACKET_OVERHEAD - 1);
+        uint32_t len = read(&(rxBuffer[1]), YMODEM_PACKET_1K_SIZE + YMODEM_PACKET_OVERHEAD - 1);
 
         if(len < (YMODEM_PACKET_1K_SIZE + YMODEM_PACKET_OVERHEAD - 1))
         {
-          ymodem->rxLength = len + 1;
-          ymodem->code     = YmodemCodeStx;
+          rxLength = len + 1;
+          code     = CodeStx;
 
-          return YmodemCodeNone;
+          return CodeNone;
         }
         else
         {
-          return YmodemCodeStx;
+          return CodeStx;
         }
       }
       else
       {
-        return (YmodemCode)(ymodem->rxBuffer[0]);
+        return (Code)(rxBuffer[0]);
       }
     }
     else
     {
-      return YmodemCodeNone;
+      return CodeNone;
     }
   }
   else
   {
-    if(ymodem->code == YmodemCodeSoh)
+    if(code == CodeSoh)
     {
-      uint32_t len = ymodem->read(&(ymodem->rxBuffer[ymodem->rxLength]), YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD - ymodem->rxLength);
+      uint32_t len = read(&(rxBuffer[rxLength]), YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD - rxLength);
 
-      if(len < (YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD - ymodem->rxLength))
+      if(len < (YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD - rxLength))
       {
-        ymodem->rxLength += len;
+        rxLength += len;
 
-        return YmodemCodeNone;
+        return CodeNone;
       }
       else
       {
-        ymodem->code = YmodemCodeNone;
+        code = CodeNone;
 
-        return YmodemCodeSoh;
+        return CodeSoh;
       }
     }
-    else if(ymodem->code == YmodemCodeStx)
+    else if(code == CodeStx)
     {
-      uint32_t len = ymodem->read(&(ymodem->rxBuffer[ymodem->rxLength]), YMODEM_PACKET_1K_SIZE + YMODEM_PACKET_OVERHEAD - ymodem->rxLength);
+      uint32_t len = read(&(rxBuffer[rxLength]), YMODEM_PACKET_1K_SIZE + YMODEM_PACKET_OVERHEAD - rxLength);
 
-      if(len < (YMODEM_PACKET_1K_SIZE + YMODEM_PACKET_OVERHEAD - ymodem->rxLength))
+      if(len < (YMODEM_PACKET_1K_SIZE + YMODEM_PACKET_OVERHEAD - rxLength))
       {
-        ymodem->rxLength += len;
+        rxLength += len;
 
-        return YmodemCodeNone;
+        return CodeNone;
       }
       else
       {
-        ymodem->code = YmodemCodeNone;
+        code = CodeNone;
 
-        return YmodemCodeStx;
+        return CodeStx;
       }
     }
     else
     {
-      ymodem->code = YmodemCodeNone;
+      code = CodeNone;
 
-      return YmodemCodeNone;
+      return CodeNone;
     }
   }
 }
 
 /**
-  * @brief  Ymodem receive none stage.
-  * @param  [in] ymodem: The ymodem to be received.
+  * @brief  Receive none stage.
+  * @param  None.
   * @return None.
   */
-static void YmodemReceiveStageNone(Ymodem *ymodem)
+void Ymodem::receiveStageNone()
 {
-  ymodem->timeCount   = 0;
-  ymodem->errorCount  = 0;
-  ymodem->dataCount   = 0;
-  ymodem->code        = YmodemCodeNone;
-  ymodem->stage       = YmodemStageEstablishing;
-  ymodem->txBuffer[0] = YmodemCodeC;
-  ymodem->txLength    = 1;
-  ymodem->write(ymodem->txBuffer, ymodem->txLength);
+  timeCount   = 0;
+  errorCount  = 0;
+  dataCount   = 0;
+  code        = CodeNone;
+  stage       = StageEstablishing;
+  txBuffer[0] = CodeC;
+  txLength    = 1;
+  write(txBuffer, txLength);
 }
 
 /**
-  * @brief  Ymodem receive establishing stage.
-  * @param  [in] ymodem: The ymodem to be received.
+  * @brief  Receive establishing stage.
+  * @param  None.
   * @return None.
   */
-static void YmodemReceiveStageEstablishing(Ymodem *ymodem)
+void Ymodem::receiveStageEstablishing()
 {
-  switch(YmodemReceivePacket(ymodem))
+  switch(receivePacket())
   {
-    case YmodemCodeSoh:
+    case CodeSoh:
     {
-      uint16_t crc = ((uint16_t)(ymodem->rxBuffer[YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD - 2]) << 8) |
-                     ((uint16_t)(ymodem->rxBuffer[YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD - 1]) << 0);
+      uint16_t crc = ((uint16_t)(rxBuffer[YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD - 2]) << 8) |
+                     ((uint16_t)(rxBuffer[YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD - 1]) << 0);
 
-      if((ymodem->rxBuffer[1] == 0x00) && (ymodem->rxBuffer[2] == 0xFF) &&
-         (crc == YmodemCRC16(&(ymodem->rxBuffer[YMODEM_PACKET_HEADER]), YMODEM_PACKET_SIZE)))
+      if((rxBuffer[1] == 0x00) && (rxBuffer[2] == 0xFF) &&
+         (crc == crc16(&(rxBuffer[YMODEM_PACKET_HEADER]), YMODEM_PACKET_SIZE)))
       {
         uint32_t dataLength = YMODEM_PACKET_SIZE;
 
-        if(ymodem->callback(YmodemStatusEstablish, &(ymodem->rxBuffer[YMODEM_PACKET_HEADER]), &dataLength) == YmodemCodeAck)
+        if(callback(StatusEstablish, &(rxBuffer[YMODEM_PACKET_HEADER]), &dataLength) == CodeAck)
         {
-          ymodem->timeCount   = 0;
-          ymodem->errorCount  = 0;
-          ymodem->dataCount   = 0;
-          ymodem->code        = YmodemCodeNone;
-          ymodem->stage       = YmodemStageEstablished;
-          ymodem->txBuffer[0] = YmodemCodeAck;
-          ymodem->txBuffer[1] = YmodemCodeC;
-          ymodem->txLength    = 2;
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
+          timeCount   = 0;
+          errorCount  = 0;
+          dataCount   = 0;
+          code        = CodeNone;
+          stage       = StageEstablished;
+          txBuffer[0] = CodeAck;
+          txBuffer[1] = CodeC;
+          txLength    = 2;
+          write(txBuffer, txLength);
         }
         else
         {
-          ymodem->timeCount  = 0;
-          ymodem->errorCount = 0;
-          ymodem->dataCount  = 0;
-          ymodem->code       = YmodemCodeNone;
-          ymodem->stage      = YmodemStageNone;
+          timeCount  = 0;
+          errorCount = 0;
+          dataCount  = 0;
+          code       = CodeNone;
+          stage      = StageNone;
 
-          for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+          for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
           {
-            ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+            txBuffer[txLength] = CodeCan;
           }
 
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
+          write(txBuffer, txLength);
         }
       }
       else
       {
-        ymodem->errorCount++;
+        errorCount++;
 
-        if(ymodem->errorCount > ymodem->errorMax)
+        if(errorCount > errorMax)
         {
-          ymodem->timeCount  = 0;
-          ymodem->errorCount = 0;
-          ymodem->dataCount  = 0;
-          ymodem->code       = YmodemCodeNone;
-          ymodem->stage      = YmodemStageNone;
+          timeCount  = 0;
+          errorCount = 0;
+          dataCount  = 0;
+          code       = CodeNone;
+          stage      = StageNone;
 
-          for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+          for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
           {
-            ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+            txBuffer[txLength] = CodeCan;
           }
 
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
-          ymodem->callback(YmodemStatusError, NULL, NULL);
+          write(txBuffer, txLength);
+          callback(StatusError, NULL, NULL);
         }
         else
         {
-          ymodem->txBuffer[0] = YmodemCodeC;
-          ymodem->txLength    = 1;
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
+          txBuffer[0] = CodeC;
+          txLength    = 1;
+          write(txBuffer, txLength);
         }
       }
 
       break;
     }
 
-    case YmodemCodeA1:
-    case YmodemCodeA2:
-    case YmodemCodeCan:
+    case CodeA1:
+    case CodeA2:
+    case CodeCan:
     {
-      ymodem->timeCount  = 0;
-      ymodem->errorCount = 0;
-      ymodem->dataCount  = 0;
-      ymodem->code       = YmodemCodeNone;
-      ymodem->stage      = YmodemStageNone;
-      ymodem->callback(YmodemStatusAbort, NULL, NULL);
+      timeCount  = 0;
+      errorCount = 0;
+      dataCount  = 0;
+      code       = CodeNone;
+      stage      = StageNone;
+      callback(StatusAbort, NULL, NULL);
 
       break;
     }
 
     default:
     {
-      ymodem->timeCount++;
+      timeCount++;
 
-      if((ymodem->timeCount / (ymodem->timeDivide + 1)) > ymodem->timeMax)
+      if((timeCount / (timeDivide + 1)) > timeMax)
       {
-        ymodem->timeCount  = 0;
-        ymodem->errorCount = 0;
-        ymodem->dataCount  = 0;
-        ymodem->code       = YmodemCodeNone;
-        ymodem->stage      = YmodemStageNone;
+        timeCount  = 0;
+        errorCount = 0;
+        dataCount  = 0;
+        code       = CodeNone;
+        stage      = StageNone;
 
-        for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+        for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
         {
-          ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+          txBuffer[txLength] = CodeCan;
         }
 
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
-        ymodem->callback(YmodemStatusTimeout, NULL, NULL);
+        write(txBuffer, txLength);
+        callback(StatusTimeout, NULL, NULL);
       }
-      else if((ymodem->timeCount % (ymodem->timeDivide + 1)) == 0)
+      else if((timeCount % (timeDivide + 1)) == 0)
       {
-        ymodem->txBuffer[0] = YmodemCodeC;
-        ymodem->txLength    = 1;
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
+        txBuffer[0] = CodeC;
+        txLength    = 1;
+        write(txBuffer, txLength);
       }
     }
   }
 }
 
 /**
-  * @brief  Ymodem receive established stage.
-  * @param  [in] ymodem: The ymodem to be received.
+  * @brief  Receive established stage.
+  * @param  None.
   * @return None.
   */
-static void YmodemReceiveStageEstablished(Ymodem *ymodem)
+void Ymodem::receiveStageEstablished()
 {
-  switch(YmodemReceivePacket(ymodem))
+  switch(receivePacket())
   {
-    case YmodemCodeSoh:
+    case CodeSoh:
     {
-      uint16_t crc = ((uint16_t)(ymodem->rxBuffer[YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD - 2]) << 8) |
-                     ((uint16_t)(ymodem->rxBuffer[YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD - 1]) << 0);
+      uint16_t crc = ((uint16_t)(rxBuffer[YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD - 2]) << 8) |
+                     ((uint16_t)(rxBuffer[YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD - 1]) << 0);
 
-      if((ymodem->rxBuffer[1] == 0x00) && (ymodem->rxBuffer[2] == 0xFF) &&
-         (crc == YmodemCRC16(&(ymodem->rxBuffer[YMODEM_PACKET_HEADER]), YMODEM_PACKET_SIZE)))
+      if((rxBuffer[1] == 0x00) && (rxBuffer[2] == 0xFF) &&
+         (crc == crc16(&(rxBuffer[YMODEM_PACKET_HEADER]), YMODEM_PACKET_SIZE)))
       {
-        ymodem->errorCount++;
+        errorCount++;
 
-        if(ymodem->errorCount > ymodem->errorMax)
+        if(errorCount > errorMax)
         {
-          ymodem->timeCount  = 0;
-          ymodem->errorCount = 0;
-          ymodem->dataCount  = 0;
-          ymodem->code       = YmodemCodeNone;
-          ymodem->stage      = YmodemStageNone;
+          timeCount  = 0;
+          errorCount = 0;
+          dataCount  = 0;
+          code       = CodeNone;
+          stage      = StageNone;
 
-          for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+          for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
           {
-            ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+            txBuffer[txLength] = CodeCan;
           }
 
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
-          ymodem->callback(YmodemStatusError, NULL, NULL);
+          write(txBuffer, txLength);
+          callback(StatusError, NULL, NULL);
         }
         else
         {
-          ymodem->txBuffer[0] = YmodemCodeAck;
-          ymodem->txBuffer[1] = YmodemCodeC;
-          ymodem->txLength    = 2;
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
+          txBuffer[0] = CodeAck;
+          txBuffer[1] = CodeC;
+          txLength    = 2;
+          write(txBuffer, txLength);
         }
       }
-      else if((ymodem->rxBuffer[1] == 0x01) && (ymodem->rxBuffer[2] == 0xFE) &&
-              (crc == YmodemCRC16(&(ymodem->rxBuffer[YMODEM_PACKET_HEADER]), YMODEM_PACKET_SIZE)))
+      else if((rxBuffer[1] == 0x01) && (rxBuffer[2] == 0xFE) &&
+              (crc == crc16(&(rxBuffer[YMODEM_PACKET_HEADER]), YMODEM_PACKET_SIZE)))
       {
         uint32_t dataLength = YMODEM_PACKET_SIZE;
 
-        if(ymodem->callback(YmodemStatusTransmit, &(ymodem->rxBuffer[YMODEM_PACKET_HEADER]), &dataLength) == YmodemCodeAck)
+        if(callback(StatusTransmit, &(rxBuffer[YMODEM_PACKET_HEADER]), &dataLength) == CodeAck)
         {
-          ymodem->timeCount   = 0;
-          ymodem->errorCount  = 0;
-          ymodem->dataCount   = 1;
-          ymodem->code        = YmodemCodeNone;
-          ymodem->stage       = YmodemStageTransmitting;
-          ymodem->txBuffer[0] = YmodemCodeAck;
-          ymodem->txLength    = 1;
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
+          timeCount   = 0;
+          errorCount  = 0;
+          dataCount   = 1;
+          code        = CodeNone;
+          stage       = StageTransmitting;
+          txBuffer[0] = CodeAck;
+          txLength    = 1;
+          write(txBuffer, txLength);
         }
         else
         {
-          ymodem->timeCount  = 0;
-          ymodem->errorCount = 0;
-          ymodem->dataCount  = 0;
-          ymodem->code       = YmodemCodeNone;
-          ymodem->stage      = YmodemStageNone;
+          timeCount  = 0;
+          errorCount = 0;
+          dataCount  = 0;
+          code       = CodeNone;
+          stage      = StageNone;
 
-          for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+          for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
           {
-            ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+            txBuffer[txLength] = CodeCan;
           }
 
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
+          write(txBuffer, txLength);
         }
       }
       else
       {
-        ymodem->errorCount++;
+        errorCount++;
 
-        if(ymodem->errorCount > ymodem->errorMax)
+        if(errorCount > errorMax)
         {
-          ymodem->timeCount  = 0;
-          ymodem->errorCount = 0;
-          ymodem->dataCount  = 0;
-          ymodem->code       = YmodemCodeNone;
-          ymodem->stage      = YmodemStageNone;
+          timeCount  = 0;
+          errorCount = 0;
+          dataCount  = 0;
+          code       = CodeNone;
+          stage      = StageNone;
 
-          for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+          for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
           {
-            ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+            txBuffer[txLength] = CodeCan;
           }
 
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
-          ymodem->callback(YmodemStatusError, NULL, NULL);
+          write(txBuffer, txLength);
+          callback(StatusError, NULL, NULL);
         }
         else
         {
-          ymodem->txBuffer[0] = YmodemCodeNak;
-          ymodem->txLength    = 1;
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
+          txBuffer[0] = CodeNak;
+          txLength    = 1;
+          write(txBuffer, txLength);
         }
       }
 
       break;
     }
 
-    case YmodemCodeStx:
+    case CodeStx:
     {
-      uint16_t crc = ((uint16_t)(ymodem->rxBuffer[YMODEM_PACKET_1K_SIZE + YMODEM_PACKET_OVERHEAD - 2]) << 8) |
-                     ((uint16_t)(ymodem->rxBuffer[YMODEM_PACKET_1K_SIZE + YMODEM_PACKET_OVERHEAD - 1]) << 0);
+      uint16_t crc = ((uint16_t)(rxBuffer[YMODEM_PACKET_1K_SIZE + YMODEM_PACKET_OVERHEAD - 2]) << 8) |
+                     ((uint16_t)(rxBuffer[YMODEM_PACKET_1K_SIZE + YMODEM_PACKET_OVERHEAD - 1]) << 0);
 
-      if((ymodem->rxBuffer[1] == 0x01) && (ymodem->rxBuffer[2] == 0xFE) &&
-         (crc == YmodemCRC16(&(ymodem->rxBuffer[YMODEM_PACKET_HEADER]), YMODEM_PACKET_1K_SIZE)))
+      if((rxBuffer[1] == 0x01) && (rxBuffer[2] == 0xFE) &&
+         (crc == crc16(&(rxBuffer[YMODEM_PACKET_HEADER]), YMODEM_PACKET_1K_SIZE)))
       {
         uint32_t dataLength = YMODEM_PACKET_1K_SIZE;
 
-        if(ymodem->callback(YmodemStatusTransmit, &(ymodem->rxBuffer[YMODEM_PACKET_HEADER]), &dataLength) == YmodemCodeAck)
+        if(callback(StatusTransmit, &(rxBuffer[YMODEM_PACKET_HEADER]), &dataLength) == CodeAck)
         {
-          ymodem->timeCount   = 0;
-          ymodem->errorCount  = 0;
-          ymodem->dataCount   = 1;
-          ymodem->code        = YmodemCodeNone;
-          ymodem->stage       = YmodemStageTransmitting;
-          ymodem->txBuffer[0] = YmodemCodeAck;
-          ymodem->txLength    = 1;
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
+          timeCount   = 0;
+          errorCount  = 0;
+          dataCount   = 1;
+          code        = CodeNone;
+          stage       = StageTransmitting;
+          txBuffer[0] = CodeAck;
+          txLength    = 1;
+          write(txBuffer, txLength);
         }
         else
         {
-          ymodem->timeCount  = 0;
-          ymodem->errorCount = 0;
-          ymodem->dataCount  = 0;
-          ymodem->code       = YmodemCodeNone;
-          ymodem->stage      = YmodemStageNone;
+          timeCount  = 0;
+          errorCount = 0;
+          dataCount  = 0;
+          code       = CodeNone;
+          stage      = StageNone;
 
-          for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+          for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
           {
-            ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+            txBuffer[txLength] = CodeCan;
           }
 
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
+          write(txBuffer, txLength);
         }
       }
       else
       {
-        ymodem->errorCount++;
+        errorCount++;
 
-        if(ymodem->errorCount > ymodem->errorMax)
+        if(errorCount > errorMax)
         {
-          ymodem->timeCount  = 0;
-          ymodem->errorCount = 0;
-          ymodem->dataCount  = 0;
-          ymodem->code       = YmodemCodeNone;
-          ymodem->stage      = YmodemStageNone;
+          timeCount  = 0;
+          errorCount = 0;
+          dataCount  = 0;
+          code       = CodeNone;
+          stage      = StageNone;
 
-          for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+          for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
           {
-            ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+            txBuffer[txLength] = CodeCan;
           }
 
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
-          ymodem->callback(YmodemStatusError, NULL, NULL);
+          write(txBuffer, txLength);
+          callback(StatusError, NULL, NULL);
         }
         else
         {
-          ymodem->txBuffer[0] = YmodemCodeNak;
-          ymodem->txLength    = 1;
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
+          txBuffer[0] = CodeNak;
+          txLength    = 1;
+          write(txBuffer, txLength);
         }
       }
 
       break;
     }
 
-    case YmodemCodeEot:
+    case CodeEot:
     {
-      ymodem->timeCount   = 0;
-      ymodem->errorCount  = 0;
-      ymodem->dataCount   = 0;
-      ymodem->code        = YmodemCodeNone;
-      ymodem->stage       = YmodemStageFinishing;
-      ymodem->txBuffer[0] = YmodemCodeNak;
-      ymodem->txLength    = 1;
-      ymodem->write(ymodem->txBuffer, ymodem->txLength);
+      timeCount   = 0;
+      errorCount  = 0;
+      dataCount   = 0;
+      code        = CodeNone;
+      stage       = StageFinishing;
+      txBuffer[0] = CodeNak;
+      txLength    = 1;
+      write(txBuffer, txLength);
 
       break;
     }
 
-    case YmodemCodeA1:
-    case YmodemCodeA2:
-    case YmodemCodeCan:
+    case CodeA1:
+    case CodeA2:
+    case CodeCan:
     {
-      ymodem->timeCount  = 0;
-      ymodem->errorCount = 0;
-      ymodem->dataCount  = 0;
-      ymodem->code       = YmodemCodeNone;
-      ymodem->stage      = YmodemStageNone;
-      ymodem->callback(YmodemStatusAbort, NULL, NULL);
+      timeCount  = 0;
+      errorCount = 0;
+      dataCount  = 0;
+      code       = CodeNone;
+      stage      = StageNone;
+      callback(StatusAbort, NULL, NULL);
 
       break;
     }
 
     default:
     {
-      ymodem->timeCount++;
+      timeCount++;
 
-      if((ymodem->timeCount / (ymodem->timeDivide + 1)) > ymodem->timeMax)
+      if((timeCount / (timeDivide + 1)) > timeMax)
       {
-        ymodem->timeCount  = 0;
-        ymodem->errorCount = 0;
-        ymodem->dataCount  = 0;
-        ymodem->code       = YmodemCodeNone;
-        ymodem->stage      = YmodemStageNone;
+        timeCount  = 0;
+        errorCount = 0;
+        dataCount  = 0;
+        code       = CodeNone;
+        stage      = StageNone;
 
-        for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+        for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
         {
-          ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+          txBuffer[txLength] = CodeCan;
         }
 
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
-        ymodem->callback(YmodemStatusError, NULL, NULL);
+        write(txBuffer, txLength);
+        callback(StatusError, NULL, NULL);
       }
-      else if((ymodem->timeCount % (ymodem->timeDivide + 1)) == 0)
+      else if((timeCount % (timeDivide + 1)) == 0)
       {
-        ymodem->txBuffer[0] = YmodemCodeNak;
-        ymodem->txLength    = 1;
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
+        txBuffer[0] = CodeNak;
+        txLength    = 1;
+        write(txBuffer, txLength);
       }
     }
   }
 }
 
 /**
-  * @brief  Ymodem receive transmitting stage.
-  * @param  [in] ymodem: The ymodem to be received.
+  * @brief  Receive transmitting stage.
+  * @param  None.
   * @return None.
   */
-static void YmodemReceiveStageTransmitting(Ymodem *ymodem)
+void Ymodem::receiveStageTransmitting()
 {
-  switch(YmodemReceivePacket(ymodem))
+  switch(receivePacket())
   {
-    case YmodemCodeSoh:
+    case CodeSoh:
     {
-      uint16_t crc = ((uint16_t)(ymodem->rxBuffer[YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD - 2]) << 8) |
-                     ((uint16_t)(ymodem->rxBuffer[YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD - 1]) << 0);
+      uint16_t crc = ((uint16_t)(rxBuffer[YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD - 2]) << 8) |
+                     ((uint16_t)(rxBuffer[YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD - 1]) << 0);
 
-      if((ymodem->rxBuffer[1] == (uint8_t)(ymodem->dataCount)) && (ymodem->rxBuffer[2] == (uint8_t)(0xFF - ymodem->dataCount)) &&
-         (crc == YmodemCRC16(&(ymodem->rxBuffer[YMODEM_PACKET_HEADER]), YMODEM_PACKET_SIZE)))
+      if((rxBuffer[1] == (uint8_t)(dataCount)) && (rxBuffer[2] == (uint8_t)(0xFF - dataCount)) &&
+         (crc == crc16(&(rxBuffer[YMODEM_PACKET_HEADER]), YMODEM_PACKET_SIZE)))
       {
-        ymodem->errorCount++;
+        errorCount++;
 
-        if(ymodem->errorCount > ymodem->errorMax)
+        if(errorCount > errorMax)
         {
-          ymodem->timeCount  = 0;
-          ymodem->errorCount = 0;
-          ymodem->dataCount  = 0;
-          ymodem->code       = YmodemCodeNone;
-          ymodem->stage      = YmodemStageNone;
+          timeCount  = 0;
+          errorCount = 0;
+          dataCount  = 0;
+          code       = CodeNone;
+          stage      = StageNone;
 
-          for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+          for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
           {
-            ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+            txBuffer[txLength] = CodeCan;
           }
 
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
-          ymodem->callback(YmodemStatusError, NULL, NULL);
+          write(txBuffer, txLength);
+          callback(StatusError, NULL, NULL);
         }
         else
         {
-          ymodem->txBuffer[0] = YmodemCodeAck;
-          ymodem->txLength    = 1;
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
+          txBuffer[0] = CodeAck;
+          txLength    = 1;
+          write(txBuffer, txLength);
         }
       }
-      else if((ymodem->rxBuffer[1] == (uint8_t)(ymodem->dataCount + 1)) && (ymodem->rxBuffer[2] == (uint8_t)(0xFE - ymodem->dataCount)) &&
-              (crc == YmodemCRC16(&(ymodem->rxBuffer[YMODEM_PACKET_HEADER]), YMODEM_PACKET_SIZE)))
+      else if((rxBuffer[1] == (uint8_t)(dataCount + 1)) && (rxBuffer[2] == (uint8_t)(0xFE - dataCount)) &&
+              (crc == crc16(&(rxBuffer[YMODEM_PACKET_HEADER]), YMODEM_PACKET_SIZE)))
       {
         uint32_t dataLength = YMODEM_PACKET_SIZE;
 
-        if(ymodem->callback(YmodemStatusTransmit, &(ymodem->rxBuffer[YMODEM_PACKET_HEADER]), &dataLength) == YmodemCodeAck)
+        if(callback(StatusTransmit, &(rxBuffer[YMODEM_PACKET_HEADER]), &dataLength) == CodeAck)
         {
-          ymodem->timeCount   = 0;
-          ymodem->errorCount  = 0;
-          ymodem->dataCount   = ymodem->dataCount + 1;
-          ymodem->code        = YmodemCodeNone;
-          ymodem->stage       = YmodemStageTransmitting;
-          ymodem->txBuffer[0] = YmodemCodeAck;
-          ymodem->txLength    = 1;
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
+          timeCount   = 0;
+          errorCount  = 0;
+          dataCount   = dataCount + 1;
+          code        = CodeNone;
+          stage       = StageTransmitting;
+          txBuffer[0] = CodeAck;
+          txLength    = 1;
+          write(txBuffer, txLength);
         }
         else
         {
-          ymodem->timeCount  = 0;
-          ymodem->errorCount = 0;
-          ymodem->dataCount  = 0;
-          ymodem->code       = YmodemCodeNone;
-          ymodem->stage      = YmodemStageNone;
+          timeCount  = 0;
+          errorCount = 0;
+          dataCount  = 0;
+          code       = CodeNone;
+          stage      = StageNone;
 
-          for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+          for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
           {
-            ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+            txBuffer[txLength] = CodeCan;
           }
 
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
+          write(txBuffer, txLength);
         }
       }
       else
       {
-        ymodem->errorCount++;
+        errorCount++;
 
-        if(ymodem->errorCount > ymodem->errorMax)
+        if(errorCount > errorMax)
         {
-          ymodem->timeCount  = 0;
-          ymodem->errorCount = 0;
-          ymodem->dataCount  = 0;
-          ymodem->code       = YmodemCodeNone;
-          ymodem->stage      = YmodemStageNone;
+          timeCount  = 0;
+          errorCount = 0;
+          dataCount  = 0;
+          code       = CodeNone;
+          stage      = StageNone;
 
-          for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+          for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
           {
-            ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+            txBuffer[txLength] = CodeCan;
           }
 
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
-          ymodem->callback(YmodemStatusError, NULL, NULL);
+          write(txBuffer, txLength);
+          callback(StatusError, NULL, NULL);
         }
         else
         {
-          ymodem->txBuffer[0] = YmodemCodeNak;
-          ymodem->txLength    = 1;
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
+          txBuffer[0] = CodeNak;
+          txLength    = 1;
+          write(txBuffer, txLength);
         }
       }
 
       break;
     }
 
-    case YmodemCodeStx:
+    case CodeStx:
     {
-      uint16_t crc = ((uint16_t)(ymodem->rxBuffer[YMODEM_PACKET_1K_SIZE + YMODEM_PACKET_OVERHEAD - 2]) << 8) |
-                     ((uint16_t)(ymodem->rxBuffer[YMODEM_PACKET_1K_SIZE + YMODEM_PACKET_OVERHEAD - 1]) << 0);
+      uint16_t crc = ((uint16_t)(rxBuffer[YMODEM_PACKET_1K_SIZE + YMODEM_PACKET_OVERHEAD - 2]) << 8) |
+                     ((uint16_t)(rxBuffer[YMODEM_PACKET_1K_SIZE + YMODEM_PACKET_OVERHEAD - 1]) << 0);
 
-      if((ymodem->rxBuffer[1] == (uint8_t)(ymodem->dataCount)) && (ymodem->rxBuffer[2] == (uint8_t)(0xFF - ymodem->dataCount)) &&
-         (crc == YmodemCRC16(&(ymodem->rxBuffer[YMODEM_PACKET_HEADER]), YMODEM_PACKET_1K_SIZE)))
+      if((rxBuffer[1] == (uint8_t)(dataCount)) && (rxBuffer[2] == (uint8_t)(0xFF - dataCount)) &&
+         (crc == crc16(&(rxBuffer[YMODEM_PACKET_HEADER]), YMODEM_PACKET_1K_SIZE)))
       {
-        ymodem->errorCount++;
+        errorCount++;
 
-        if(ymodem->errorCount > ymodem->errorMax)
+        if(errorCount > errorMax)
         {
-          ymodem->timeCount  = 0;
-          ymodem->errorCount = 0;
-          ymodem->dataCount  = 0;
-          ymodem->code       = YmodemCodeNone;
-          ymodem->stage      = YmodemStageNone;
+          timeCount  = 0;
+          errorCount = 0;
+          dataCount  = 0;
+          code       = CodeNone;
+          stage      = StageNone;
 
-          for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+          for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
           {
-            ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+            txBuffer[txLength] = CodeCan;
           }
 
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
-          ymodem->callback(YmodemStatusError, NULL, NULL);
+          write(txBuffer, txLength);
+          callback(StatusError, NULL, NULL);
         }
         else
         {
-          ymodem->txBuffer[0] = YmodemCodeAck;
-          ymodem->txLength    = 1;
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
+          txBuffer[0] = CodeAck;
+          txLength    = 1;
+          write(txBuffer, txLength);
         }
       }
-      else if((ymodem->rxBuffer[1] == (uint8_t)(ymodem->dataCount + 1)) && (ymodem->rxBuffer[2] == (uint8_t)(0xFE - ymodem->dataCount)) &&
-              (crc == YmodemCRC16(&(ymodem->rxBuffer[YMODEM_PACKET_HEADER]), YMODEM_PACKET_1K_SIZE)))
+      else if((rxBuffer[1] == (uint8_t)(dataCount + 1)) && (rxBuffer[2] == (uint8_t)(0xFE - dataCount)) &&
+              (crc == crc16(&(rxBuffer[YMODEM_PACKET_HEADER]), YMODEM_PACKET_1K_SIZE)))
       {
         uint32_t dataLength = YMODEM_PACKET_1K_SIZE;
 
-        if(ymodem->callback(YmodemStatusTransmit, &(ymodem->rxBuffer[YMODEM_PACKET_HEADER]), &dataLength) == YmodemCodeAck)
+        if(callback(StatusTransmit, &(rxBuffer[YMODEM_PACKET_HEADER]), &dataLength) == CodeAck)
         {
-          ymodem->timeCount   = 0;
-          ymodem->errorCount  = 0;
-          ymodem->dataCount   = ymodem->dataCount + 1;
-          ymodem->code        = YmodemCodeNone;
-          ymodem->stage       = YmodemStageTransmitting;
-          ymodem->txBuffer[0] = YmodemCodeAck;
-          ymodem->txLength    = 1;
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
+          timeCount   = 0;
+          errorCount  = 0;
+          dataCount   = dataCount + 1;
+          code        = CodeNone;
+          stage       = StageTransmitting;
+          txBuffer[0] = CodeAck;
+          txLength    = 1;
+          write(txBuffer, txLength);
         }
         else
         {
-          ymodem->timeCount  = 0;
-          ymodem->errorCount = 0;
-          ymodem->dataCount  = 0;
-          ymodem->code       = YmodemCodeNone;
-          ymodem->stage      = YmodemStageNone;
+          timeCount  = 0;
+          errorCount = 0;
+          dataCount  = 0;
+          code       = CodeNone;
+          stage      = StageNone;
 
-          for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+          for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
           {
-            ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+            txBuffer[txLength] = CodeCan;
           }
 
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
+          write(txBuffer, txLength);
         }
       }
       else
       {
-        ymodem->errorCount++;
+        errorCount++;
 
-        if(ymodem->errorCount > ymodem->errorMax)
+        if(errorCount > errorMax)
         {
-          ymodem->timeCount  = 0;
-          ymodem->errorCount = 0;
-          ymodem->dataCount  = 0;
-          ymodem->code       = YmodemCodeNone;
-          ymodem->stage      = YmodemStageNone;
+          timeCount  = 0;
+          errorCount = 0;
+          dataCount  = 0;
+          code       = CodeNone;
+          stage      = StageNone;
 
-          for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+          for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
           {
-            ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+            txBuffer[txLength] = CodeCan;
           }
 
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
-          ymodem->callback(YmodemStatusError, NULL, NULL);
+          write(txBuffer, txLength);
+          callback(StatusError, NULL, NULL);
         }
         else
         {
-          ymodem->txBuffer[0] = YmodemCodeNak;
-          ymodem->txLength    = 1;
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
+          txBuffer[0] = CodeNak;
+          txLength    = 1;
+          write(txBuffer, txLength);
         }
       }
 
       break;
     }
 
-    case YmodemCodeEot:
+    case CodeEot:
     {
-      ymodem->timeCount   = 0;
-      ymodem->errorCount  = 0;
-      ymodem->dataCount   = 0;
-      ymodem->code        = YmodemCodeNone;
-      ymodem->stage       = YmodemStageFinishing;
-      ymodem->txBuffer[0] = YmodemCodeNak;
-      ymodem->txLength    = 1;
-      ymodem->write(ymodem->txBuffer, ymodem->txLength);
+      timeCount   = 0;
+      errorCount  = 0;
+      dataCount   = 0;
+      code        = CodeNone;
+      stage       = StageFinishing;
+      txBuffer[0] = CodeNak;
+      txLength    = 1;
+      write(txBuffer, txLength);
 
       break;
     }
 
-    case YmodemCodeA1:
-    case YmodemCodeA2:
-    case YmodemCodeCan:
+    case CodeA1:
+    case CodeA2:
+    case CodeCan:
     {
-      ymodem->timeCount  = 0;
-      ymodem->errorCount = 0;
-      ymodem->dataCount  = 0;
-      ymodem->code       = YmodemCodeNone;
-      ymodem->stage      = YmodemStageNone;
-      ymodem->callback(YmodemStatusAbort, NULL, NULL);
+      timeCount  = 0;
+      errorCount = 0;
+      dataCount  = 0;
+      code       = CodeNone;
+      stage      = StageNone;
+      callback(StatusAbort, NULL, NULL);
 
       break;
     }
 
     default:
     {
-      ymodem->timeCount++;
+      timeCount++;
 
-      if((ymodem->timeCount / (ymodem->timeDivide + 1)) > ymodem->timeMax)
+      if((timeCount / (timeDivide + 1)) > timeMax)
       {
-        ymodem->timeCount  = 0;
-        ymodem->errorCount = 0;
-        ymodem->dataCount  = 0;
-        ymodem->code       = YmodemCodeNone;
-        ymodem->stage      = YmodemStageNone;
+        timeCount  = 0;
+        errorCount = 0;
+        dataCount  = 0;
+        code       = CodeNone;
+        stage      = StageNone;
 
-        for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+        for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
         {
-          ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+          txBuffer[txLength] = CodeCan;
         }
 
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
-        ymodem->callback(YmodemStatusError, NULL, NULL);
+        write(txBuffer, txLength);
+        callback(StatusError, NULL, NULL);
       }
-      else if((ymodem->timeCount % (ymodem->timeDivide + 1)) == 0)
+      else if((timeCount % (timeDivide + 1)) == 0)
       {
-        ymodem->txBuffer[0] = YmodemCodeNak;
-        ymodem->txLength    = 1;
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
+        txBuffer[0] = CodeNak;
+        txLength    = 1;
+        write(txBuffer, txLength);
       }
     }
   }
 }
 
 /**
-  * @brief  Ymodem receive finishing stage.
-  * @param  [in] ymodem: The ymodem to be received.
+  * @brief  Receive finishing stage.
+  * @param  None.
   * @return None.
   */
-static void YmodemReceiveStageFinishing(Ymodem *ymodem)
+void Ymodem::receiveStageFinishing()
 {
-  switch(YmodemReceivePacket(ymodem))
+  switch(receivePacket())
   {
-    case YmodemCodeEot:
+    case CodeEot:
     {
-      ymodem->timeCount   = 0;
-      ymodem->errorCount  = 0;
-      ymodem->dataCount   = 0;
-      ymodem->code        = YmodemCodeNone;
-      ymodem->stage       = YmodemStageFinished;
-      ymodem->txBuffer[0] = YmodemCodeAck;
-      ymodem->txBuffer[1] = YmodemCodeC;
-      ymodem->txLength    = 2;
-      ymodem->write(ymodem->txBuffer, ymodem->txLength);
+      timeCount   = 0;
+      errorCount  = 0;
+      dataCount   = 0;
+      code        = CodeNone;
+      stage       = StageFinished;
+      txBuffer[0] = CodeAck;
+      txBuffer[1] = CodeC;
+      txLength    = 2;
+      write(txBuffer, txLength);
 
       break;
     }
 
-    case YmodemCodeA1:
-    case YmodemCodeA2:
-    case YmodemCodeCan:
+    case CodeA1:
+    case CodeA2:
+    case CodeCan:
     {
-      ymodem->timeCount  = 0;
-      ymodem->errorCount = 0;
-      ymodem->dataCount  = 0;
-      ymodem->code       = YmodemCodeNone;
-      ymodem->stage      = YmodemStageNone;
-      ymodem->callback(YmodemStatusAbort, NULL, NULL);
+      timeCount  = 0;
+      errorCount = 0;
+      dataCount  = 0;
+      code       = CodeNone;
+      stage      = StageNone;
+      callback(StatusAbort, NULL, NULL);
 
       break;
     }
 
     default:
     {
-      ymodem->timeCount++;
+      timeCount++;
 
-      if((ymodem->timeCount / (ymodem->timeDivide + 1)) > ymodem->timeMax)
+      if((timeCount / (timeDivide + 1)) > timeMax)
       {
-        ymodem->timeCount  = 0;
-        ymodem->errorCount = 0;
-        ymodem->dataCount  = 0;
-        ymodem->code       = YmodemCodeNone;
-        ymodem->stage      = YmodemStageNone;
+        timeCount  = 0;
+        errorCount = 0;
+        dataCount  = 0;
+        code       = CodeNone;
+        stage      = StageNone;
 
-        for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+        for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
         {
-          ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+          txBuffer[txLength] = CodeCan;
         }
 
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
-        ymodem->callback(YmodemStatusError, NULL, NULL);
+        write(txBuffer, txLength);
+        callback(StatusError, NULL, NULL);
       }
-      else if((ymodem->timeCount % (ymodem->timeDivide + 1)) == 0)
+      else if((timeCount % (timeDivide + 1)) == 0)
       {
-        ymodem->txBuffer[0] = YmodemCodeNak;
-        ymodem->txLength    = 1;
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
+        txBuffer[0] = CodeNak;
+        txLength    = 1;
+        write(txBuffer, txLength);
       }
     }
   }
 }
 
 /**
-  * @brief  Ymodem receive finished stage.
-  * @param  [in] ymodem: The ymodem to be received.
+  * @brief  Receive finished stage.
+  * @param  None.
   * @return None.
   */
-static void YmodemReceiveStageFinished(Ymodem *ymodem)
+void Ymodem::receiveStageFinished()
 {
-  switch(YmodemReceivePacket(ymodem))
+  switch(receivePacket())
   {
-    case YmodemCodeSoh:
+    case CodeSoh:
     {
-      uint16_t crc = ((uint16_t)(ymodem->rxBuffer[YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD - 2]) << 8) |
-                     ((uint16_t)(ymodem->rxBuffer[YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD - 1]) << 0);
+      uint16_t crc = ((uint16_t)(rxBuffer[YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD - 2]) << 8) |
+                     ((uint16_t)(rxBuffer[YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD - 1]) << 0);
 
-      if((ymodem->rxBuffer[1] == 0x00) && (ymodem->rxBuffer[2] == 0xFF) &&
-         (crc == YmodemCRC16(&(ymodem->rxBuffer[YMODEM_PACKET_HEADER]), YMODEM_PACKET_SIZE)))
+      if((rxBuffer[1] == 0x00) && (rxBuffer[2] == 0xFF) &&
+         (crc == crc16(&(rxBuffer[YMODEM_PACKET_HEADER]), YMODEM_PACKET_SIZE)))
       {
-        ymodem->timeCount   = 0;
-        ymodem->errorCount  = 0;
-        ymodem->dataCount   = 0;
-        ymodem->code        = YmodemCodeNone;
-        ymodem->stage       = YmodemStageNone;
-        ymodem->txBuffer[0] = YmodemCodeAck;
-        ymodem->txLength    = 1;
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
-        ymodem->callback(YmodemStatusFinish, NULL, NULL);
+        timeCount   = 0;
+        errorCount  = 0;
+        dataCount   = 0;
+        code        = CodeNone;
+        stage       = StageNone;
+        txBuffer[0] = CodeAck;
+        txLength    = 1;
+        write(txBuffer, txLength);
+        callback(StatusFinish, NULL, NULL);
       }
       else
       {
-        ymodem->errorCount++;
+        errorCount++;
 
-        if(ymodem->errorCount > ymodem->errorMax)
+        if(errorCount > errorMax)
         {
-          ymodem->timeCount  = 0;
-          ymodem->errorCount = 0;
-          ymodem->dataCount  = 0;
-          ymodem->code       = YmodemCodeNone;
-          ymodem->stage      = YmodemStageNone;
+          timeCount  = 0;
+          errorCount = 0;
+          dataCount  = 0;
+          code       = CodeNone;
+          stage      = StageNone;
 
-          for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+          for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
           {
-            ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+            txBuffer[txLength] = CodeCan;
           }
 
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
-          ymodem->callback(YmodemStatusError, NULL, NULL);
+          write(txBuffer, txLength);
+          callback(StatusError, NULL, NULL);
         }
         else
         {
-          ymodem->txBuffer[0] = YmodemCodeNak;
-          ymodem->txLength    = 1;
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
+          txBuffer[0] = CodeNak;
+          txLength    = 1;
+          write(txBuffer, txLength);
         }
       }
 
       break;
     }
 
-    case YmodemCodeEot:
+    case CodeEot:
     {
-      ymodem->errorCount++;
+      errorCount++;
 
-      if(ymodem->errorCount > ymodem->errorMax)
+      if(errorCount > errorMax)
       {
-        ymodem->timeCount  = 0;
-        ymodem->errorCount = 0;
-        ymodem->dataCount  = 0;
-        ymodem->code       = YmodemCodeNone;
-        ymodem->stage      = YmodemStageNone;
+        timeCount  = 0;
+        errorCount = 0;
+        dataCount  = 0;
+        code       = CodeNone;
+        stage      = StageNone;
 
-        for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+        for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
         {
-          ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+          txBuffer[txLength] = CodeCan;
         }
 
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
-        ymodem->callback(YmodemStatusError, NULL, NULL);
+        write(txBuffer, txLength);
+        callback(StatusError, NULL, NULL);
       }
       else
       {
-        ymodem->txBuffer[0] = YmodemCodeAck;
-        ymodem->txBuffer[1] = YmodemCodeC;
-        ymodem->txLength    = 2;
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
+        txBuffer[0] = CodeAck;
+        txBuffer[1] = CodeC;
+        txLength    = 2;
+        write(txBuffer, txLength);
       }
 
       break;
     }
 
-    case YmodemCodeA1:
-    case YmodemCodeA2:
-    case YmodemCodeCan:
+    case CodeA1:
+    case CodeA2:
+    case CodeCan:
     {
-      ymodem->timeCount  = 0;
-      ymodem->errorCount = 0;
-      ymodem->dataCount  = 0;
-      ymodem->code       = YmodemCodeNone;
-      ymodem->stage      = YmodemStageNone;
-      ymodem->callback(YmodemStatusAbort, NULL, NULL);
+      timeCount  = 0;
+      errorCount = 0;
+      dataCount  = 0;
+      code       = CodeNone;
+      stage      = StageNone;
+      callback(StatusAbort, NULL, NULL);
 
       break;
     }
 
     default:
     {
-      ymodem->timeCount++;
+      timeCount++;
 
-      if((ymodem->timeCount / (ymodem->timeDivide + 1)) > ymodem->timeMax)
+      if((timeCount / (timeDivide + 1)) > timeMax)
       {
-        ymodem->timeCount  = 0;
-        ymodem->errorCount = 0;
-        ymodem->dataCount  = 0;
-        ymodem->code       = YmodemCodeNone;
-        ymodem->stage      = YmodemStageNone;
+        timeCount  = 0;
+        errorCount = 0;
+        dataCount  = 0;
+        code       = CodeNone;
+        stage      = StageNone;
 
-        for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+        for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
         {
-          ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+          txBuffer[txLength] = CodeCan;
         }
 
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
-        ymodem->callback(YmodemStatusError, NULL, NULL);
+        write(txBuffer, txLength);
+        callback(StatusError, NULL, NULL);
       }
-      else if((ymodem->timeCount % (ymodem->timeDivide + 1)) == 0)
+      else if((timeCount % (timeDivide + 1)) == 0)
       {
-        ymodem->txBuffer[0] = YmodemCodeNak;
-        ymodem->txLength    = 1;
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
+        txBuffer[0] = CodeNak;
+        txLength    = 1;
+        write(txBuffer, txLength);
       }
     }
   }
 }
 
 /**
-  * @brief  Ymodem transmit none stage.
-  * @param  [in] ymodem: The ymodem to be transmitted.
+  * @brief  Transmit none stage.
+  * @param  None.
   * @return None.
   */
-static void YmodemTransmitStageNone(Ymodem *ymodem)
+void Ymodem::transmitStageNone()
 {
-  ymodem->timeCount   = 0;
-  ymodem->errorCount  = 0;
-  ymodem->dataCount   = 0;
-  ymodem->code        = YmodemCodeNone;
-  ymodem->stage       = YmodemStageEstablishing;
+  timeCount   = 0;
+  errorCount  = 0;
+  dataCount   = 0;
+  code        = CodeNone;
+  stage       = StageEstablishing;
 }
 
 /**
-  * @brief  Ymodem transmit establishing stage.
-  * @param  [in] ymodem: The ymodem to be transmitted.
+  * @brief  Transmit establishing stage.
+  * @param  None.
   * @return None.
   */
-static void YmodemTransmitStageEstablishing(Ymodem *ymodem)
+void Ymodem::transmitStageEstablishing()
 {
-  switch(YmodemReceivePacket(ymodem))
+  switch(receivePacket())
   {
-    case YmodemCodeC:
+    case CodeC:
     {
-      memset(&(ymodem->txBuffer[YMODEM_PACKET_HEADER]), NULL, YMODEM_PACKET_SIZE);
+      memset(&(txBuffer[YMODEM_PACKET_HEADER]), NULL, YMODEM_PACKET_SIZE);
 
-      if(ymodem->callback(YmodemStatusEstablish, &(ymodem->txBuffer[YMODEM_PACKET_HEADER]), &(ymodem->txLength)) == YmodemCodeAck)
+      if(callback(StatusEstablish, &(txBuffer[YMODEM_PACKET_HEADER]), &(txLength)) == CodeAck)
       {
-        uint16_t crc = YmodemCRC16(&(ymodem->txBuffer[YMODEM_PACKET_HEADER]), ymodem->txLength);
+        uint16_t crc = crc16(&(txBuffer[YMODEM_PACKET_HEADER]), txLength);
 
-        ymodem->timeCount                                               = 0;
-        ymodem->errorCount                                              = 0;
-        ymodem->dataCount                                               = 0;
-        ymodem->code                                                    = YmodemCodeNone;
-        ymodem->stage                                                   = YmodemStageEstablished;
-        ymodem->txBuffer[0]                                             = YmodemCodeSoh;
-        ymodem->txBuffer[1]                                             = 0x00;
-        ymodem->txBuffer[2]                                             = 0xFF;
-        ymodem->txBuffer[ymodem->txLength + YMODEM_PACKET_OVERHEAD - 2] = (uint8_t)(crc >> 8);
-        ymodem->txBuffer[ymodem->txLength + YMODEM_PACKET_OVERHEAD - 1] = (uint8_t)(crc >> 0);
-        ymodem->txLength                                                = ymodem->txLength + YMODEM_PACKET_OVERHEAD;
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
+        timeCount                                       = 0;
+        errorCount                                      = 0;
+        dataCount                                       = 0;
+        code                                            = CodeNone;
+        stage                                           = StageEstablished;
+        txBuffer[0]                                     = CodeSoh;
+        txBuffer[1]                                     = 0x00;
+        txBuffer[2]                                     = 0xFF;
+        txBuffer[txLength + YMODEM_PACKET_OVERHEAD - 2] = (uint8_t)(crc >> 8);
+        txBuffer[txLength + YMODEM_PACKET_OVERHEAD - 1] = (uint8_t)(crc >> 0);
+        txLength                                        = txLength + YMODEM_PACKET_OVERHEAD;
+        write(txBuffer, txLength);
       }
       else
       {
-        ymodem->timeCount  = 0;
-        ymodem->errorCount = 0;
-        ymodem->dataCount  = 0;
-        ymodem->code       = YmodemCodeNone;
-        ymodem->stage      = YmodemStageNone;
+        timeCount  = 0;
+        errorCount = 0;
+        dataCount  = 0;
+        code       = CodeNone;
+        stage      = StageNone;
 
-        for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+        for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
         {
-          ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+          txBuffer[txLength] = CodeCan;
         }
 
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
+        write(txBuffer, txLength);
       }
 
       break;
     }
 
-    case YmodemCodeA1:
-    case YmodemCodeA2:
-    case YmodemCodeCan:
+    case CodeA1:
+    case CodeA2:
+    case CodeCan:
     {
-      ymodem->timeCount  = 0;
-      ymodem->errorCount = 0;
-      ymodem->dataCount  = 0;
-      ymodem->code       = YmodemCodeNone;
-      ymodem->stage      = YmodemStageNone;
-      ymodem->callback(YmodemStatusAbort, NULL, NULL);
+      timeCount  = 0;
+      errorCount = 0;
+      dataCount  = 0;
+      code       = CodeNone;
+      stage      = StageNone;
+      callback(StatusAbort, NULL, NULL);
 
       break;
     }
 
     default:
     {
-      ymodem->timeCount++;
+      timeCount++;
 
-      if((ymodem->timeCount / (ymodem->timeDivide + 1)) > ymodem->timeMax)
+      if((timeCount / (timeDivide + 1)) > timeMax)
       {
-        ymodem->timeCount  = 0;
-        ymodem->errorCount = 0;
-        ymodem->dataCount  = 0;
-        ymodem->code       = YmodemCodeNone;
-        ymodem->stage      = YmodemStageNone;
+        timeCount  = 0;
+        errorCount = 0;
+        dataCount  = 0;
+        code       = CodeNone;
+        stage      = StageNone;
 
-        for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+        for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
         {
-          ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+          txBuffer[txLength] = CodeCan;
         }
 
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
-        ymodem->callback(YmodemStatusTimeout, NULL, NULL);
+        write(txBuffer, txLength);
+        callback(StatusTimeout, NULL, NULL);
       }
     }
   }
 }
 
 /**
-  * @brief  Ymodem transmit established stage.
-  * @param  [in] ymodem: The ymodem to be transmitted.
+  * @brief  Transmit established stage.
+  * @param  None.
   * @return None.
   */
-static void YmodemTransmitStageEstablished(Ymodem *ymodem)
+void Ymodem::transmitStageEstablished()
 {
-  switch(YmodemReceivePacket(ymodem))
+  switch(receivePacket())
   {
-    case YmodemCodeNak:
+    case CodeNak:
     {
-      ymodem->errorCount++;
+      errorCount++;
 
-      if(ymodem->errorCount > ymodem->errorMax)
+      if(errorCount > errorMax)
       {
-        ymodem->timeCount  = 0;
-        ymodem->errorCount = 0;
-        ymodem->dataCount  = 0;
-        ymodem->code       = YmodemCodeNone;
-        ymodem->stage      = YmodemStageNone;
+        timeCount  = 0;
+        errorCount = 0;
+        dataCount  = 0;
+        code       = CodeNone;
+        stage      = StageNone;
 
-        for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+        for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
         {
-          ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+          txBuffer[txLength] = CodeCan;
         }
 
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
-        ymodem->callback(YmodemStatusError, NULL, NULL);
+        write(txBuffer, txLength);
+        callback(StatusError, NULL, NULL);
       }
       else
       {
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
+        write(txBuffer, txLength);
       }
 
       break;
     }
 
-    case YmodemCodeC:
+    case CodeC:
     {
-      ymodem->errorCount++;
+      errorCount++;
 
-      if(ymodem->errorCount > ymodem->errorMax)
+      if(errorCount > errorMax)
       {
-        ymodem->timeCount  = 0;
-        ymodem->errorCount = 0;
-        ymodem->dataCount  = 0;
-        ymodem->code       = YmodemCodeNone;
-        ymodem->stage      = YmodemStageNone;
+        timeCount  = 0;
+        errorCount = 0;
+        dataCount  = 0;
+        code       = CodeNone;
+        stage      = StageNone;
 
-        for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+        for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
         {
-          ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+          txBuffer[txLength] = CodeCan;
         }
 
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
-        ymodem->callback(YmodemStatusError, NULL, NULL);
+        write(txBuffer, txLength);
+        callback(StatusError, NULL, NULL);
       }
       else
       {
-        ymodem->timeCount  = 0;
-        ymodem->errorCount = 0;
-        ymodem->dataCount  = ymodem->dataCount;
-        ymodem->code       = YmodemCodeNone;
-        ymodem->stage      = (YmodemStage)(ymodem->stage + ymodem->dataCount);
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
+        timeCount  = 0;
+        errorCount = 0;
+        dataCount  = dataCount;
+        code       = CodeNone;
+        stage      = (Stage)(stage + dataCount);
+        write(txBuffer, txLength);
       }
 
       break;
     }
 
-    case YmodemCodeAck:
+    case CodeAck:
     {
-      memset(&(ymodem->txBuffer[YMODEM_PACKET_HEADER]), NULL, YMODEM_PACKET_1K_SIZE);
+      memset(&(txBuffer[YMODEM_PACKET_HEADER]), NULL, YMODEM_PACKET_1K_SIZE);
 
-      switch(ymodem->callback(YmodemStatusTransmit, &(ymodem->txBuffer[YMODEM_PACKET_HEADER]), &(ymodem->txLength)))
+      switch(callback(StatusTransmit, &(txBuffer[YMODEM_PACKET_HEADER]), &(txLength)))
       {
-        case YmodemCodeAck:
+        case CodeAck:
         {
-          uint16_t crc = YmodemCRC16(&(ymodem->txBuffer[YMODEM_PACKET_HEADER]), ymodem->txLength);
+          uint16_t crc = crc16(&(txBuffer[YMODEM_PACKET_HEADER]), txLength);
 
-          ymodem->timeCount                                               = 0;
-          ymodem->errorCount                                              = 0;
-          ymodem->dataCount                                               = 1;
-          ymodem->code                                                    = YmodemCodeNone;
-          ymodem->stage                                                   = YmodemStageEstablished;
-          ymodem->txBuffer[0]                                             = ymodem->txLength > YMODEM_PACKET_SIZE ? YmodemCodeStx : YmodemCodeSoh;
-          ymodem->txBuffer[1]                                             = 0x01;
-          ymodem->txBuffer[2]                                             = 0xFE;
-          ymodem->txBuffer[ymodem->txLength + YMODEM_PACKET_OVERHEAD - 2] = (uint8_t)(crc >> 8);
-          ymodem->txBuffer[ymodem->txLength + YMODEM_PACKET_OVERHEAD - 1] = (uint8_t)(crc >> 0);
-          ymodem->txLength                                                = ymodem->txLength + YMODEM_PACKET_OVERHEAD;
+          timeCount                                       = 0;
+          errorCount                                      = 0;
+          dataCount                                       = 1;
+          code                                            = CodeNone;
+          stage                                           = StageEstablished;
+          txBuffer[0]                                     = txLength > YMODEM_PACKET_SIZE ? CodeStx : CodeSoh;
+          txBuffer[1]                                     = 0x01;
+          txBuffer[2]                                     = 0xFE;
+          txBuffer[txLength + YMODEM_PACKET_OVERHEAD - 2] = (uint8_t)(crc >> 8);
+          txBuffer[txLength + YMODEM_PACKET_OVERHEAD - 1] = (uint8_t)(crc >> 0);
+          txLength                                        = txLength + YMODEM_PACKET_OVERHEAD;
 
           break;
         }
 
-        case YmodemCodeEot:
+        case CodeEot:
         {
-          ymodem->timeCount   = 0;
-          ymodem->errorCount  = 0;
-          ymodem->dataCount   = 2;
-          ymodem->code        = YmodemCodeNone;
-          ymodem->stage       = YmodemStageEstablished;
-          ymodem->txBuffer[0] = YmodemCodeEot;
-          ymodem->txLength    = 1;
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
+          timeCount   = 0;
+          errorCount  = 0;
+          dataCount   = 2;
+          code        = CodeNone;
+          stage       = StageEstablished;
+          txBuffer[0] = CodeEot;
+          txLength    = 1;
+          write(txBuffer, txLength);
 
           break;
         }
 
         default:
         {
-          ymodem->timeCount  = 0;
-          ymodem->errorCount = 0;
-          ymodem->dataCount  = 0;
-          ymodem->code       = YmodemCodeNone;
-          ymodem->stage      = YmodemStageNone;
+          timeCount  = 0;
+          errorCount = 0;
+          dataCount  = 0;
+          code       = CodeNone;
+          stage      = StageNone;
 
-          for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+          for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
           {
-            ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+            txBuffer[txLength] = CodeCan;
           }
 
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
+          write(txBuffer, txLength);
         }
       }
 
       break;
     }
 
-    case YmodemCodeA1:
-    case YmodemCodeA2:
-    case YmodemCodeCan:
+    case CodeA1:
+    case CodeA2:
+    case CodeCan:
     {
-      ymodem->timeCount  = 0;
-      ymodem->errorCount = 0;
-      ymodem->dataCount  = 0;
-      ymodem->code       = YmodemCodeNone;
-      ymodem->stage      = YmodemStageNone;
-      ymodem->callback(YmodemStatusAbort, NULL, NULL);
+      timeCount  = 0;
+      errorCount = 0;
+      dataCount  = 0;
+      code       = CodeNone;
+      stage      = StageNone;
+      callback(StatusAbort, NULL, NULL);
 
       break;
     }
 
     default:
     {
-      ymodem->timeCount++;
+      timeCount++;
 
-      if((ymodem->timeCount / (ymodem->timeDivide + 1)) > ymodem->timeMax)
+      if((timeCount / (timeDivide + 1)) > timeMax)
       {
-        ymodem->timeCount  = 0;
-        ymodem->errorCount = 0;
-        ymodem->dataCount  = 0;
-        ymodem->code       = YmodemCodeNone;
-        ymodem->stage      = YmodemStageNone;
+        timeCount  = 0;
+        errorCount = 0;
+        dataCount  = 0;
+        code       = CodeNone;
+        stage      = StageNone;
 
-        for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+        for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
         {
-          ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+          txBuffer[txLength] = CodeCan;
         }
 
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
-        ymodem->callback(YmodemStatusError, NULL, NULL);
+        write(txBuffer, txLength);
+        callback(StatusError, NULL, NULL);
       }
-      else if((ymodem->timeCount % (ymodem->timeDivide + 1)) == 0)
+      else if((timeCount % (timeDivide + 1)) == 0)
       {
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
+        write(txBuffer, txLength);
       }
     }
   }
 }
 
 /**
-  * @brief  Ymodem transmit transmitting stage.
-  * @param  [in] ymodem: The ymodem to be transmitted.
+  * @brief  Transmit transmitting stage.
+  * @param  None.
   * @return None.
   */
-static void YmodemTransmitStageTransmitting(Ymodem *ymodem)
+void Ymodem::transmitStageTransmitting()
 {
-  switch(YmodemReceivePacket(ymodem))
+  switch(receivePacket())
   {
-    case YmodemCodeNak:
+    case CodeNak:
     {
-      ymodem->errorCount++;
+      errorCount++;
 
-      if(ymodem->errorCount > ymodem->errorMax)
+      if(errorCount > errorMax)
       {
-        ymodem->timeCount  = 0;
-        ymodem->errorCount = 0;
-        ymodem->dataCount  = 0;
-        ymodem->code       = YmodemCodeNone;
-        ymodem->stage      = YmodemStageNone;
+        timeCount  = 0;
+        errorCount = 0;
+        dataCount  = 0;
+        code       = CodeNone;
+        stage      = StageNone;
 
-        for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+        for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
         {
-          ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+          txBuffer[txLength] = CodeCan;
         }
 
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
-        ymodem->callback(YmodemStatusError, NULL, NULL);
+        write(txBuffer, txLength);
+        callback(StatusError, NULL, NULL);
       }
       else
       {
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
+        write(txBuffer, txLength);
       }
 
       break;
     }
 
-    case YmodemCodeAck:
+    case CodeAck:
     {
-      memset(&(ymodem->txBuffer[YMODEM_PACKET_HEADER]), NULL, YMODEM_PACKET_1K_SIZE);
+      memset(&(txBuffer[YMODEM_PACKET_HEADER]), NULL, YMODEM_PACKET_1K_SIZE);
 
-      switch(ymodem->callback(YmodemStatusTransmit, &(ymodem->txBuffer[YMODEM_PACKET_HEADER]), &(ymodem->txLength)))
+      switch(callback(StatusTransmit, &(txBuffer[YMODEM_PACKET_HEADER]), &(txLength)))
       {
-        case YmodemCodeAck:
+        case CodeAck:
         {
-          uint16_t crc = YmodemCRC16(&(ymodem->txBuffer[YMODEM_PACKET_HEADER]), ymodem->txLength);
+          uint16_t crc = crc16(&(txBuffer[YMODEM_PACKET_HEADER]), txLength);
 
-          ymodem->timeCount                                               = 0;
-          ymodem->errorCount                                              = 0;
-          ymodem->dataCount                                               = ymodem->dataCount + 1;
-          ymodem->code                                                    = YmodemCodeNone;
-          ymodem->stage                                                   = YmodemStageTransmitting;
-          ymodem->txBuffer[0]                                             = ymodem->txLength > YMODEM_PACKET_SIZE ? YmodemCodeStx : YmodemCodeSoh;
-          ymodem->txBuffer[1]                                             = ymodem->dataCount;
-          ymodem->txBuffer[2]                                             = 0xFF - ymodem->dataCount;
-          ymodem->txBuffer[ymodem->txLength + YMODEM_PACKET_OVERHEAD - 2] = (uint8_t)(crc >> 8);
-          ymodem->txBuffer[ymodem->txLength + YMODEM_PACKET_OVERHEAD - 1] = (uint8_t)(crc >> 0);
-          ymodem->txLength                                                = ymodem->txLength + YMODEM_PACKET_OVERHEAD;
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
+          timeCount                                       = 0;
+          errorCount                                      = 0;
+          dataCount                                       = dataCount + 1;
+          code                                            = CodeNone;
+          stage                                           = StageTransmitting;
+          txBuffer[0]                                     = txLength > YMODEM_PACKET_SIZE ? CodeStx : CodeSoh;
+          txBuffer[1]                                     = dataCount;
+          txBuffer[2]                                     = 0xFF - dataCount;
+          txBuffer[txLength + YMODEM_PACKET_OVERHEAD - 2] = (uint8_t)(crc >> 8);
+          txBuffer[txLength + YMODEM_PACKET_OVERHEAD - 1] = (uint8_t)(crc >> 0);
+          txLength                                        = txLength + YMODEM_PACKET_OVERHEAD;
+          write(txBuffer, txLength);
 
           break;
         }
 
-        case YmodemCodeEot:
+        case CodeEot:
         {
-          ymodem->timeCount   = 0;
-          ymodem->errorCount  = 0;
-          ymodem->dataCount   = 0;
-          ymodem->code        = YmodemCodeNone;
-          ymodem->stage       = YmodemStageFinishing;
-          ymodem->txBuffer[0] = YmodemCodeEot;
-          ymodem->txLength    = 1;
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
+          timeCount   = 0;
+          errorCount  = 0;
+          dataCount   = 0;
+          code        = CodeNone;
+          stage       = StageFinishing;
+          txBuffer[0] = CodeEot;
+          txLength    = 1;
+          write(txBuffer, txLength);
 
           break;
         }
 
         default:
         {
-          ymodem->timeCount  = 0;
-          ymodem->errorCount = 0;
-          ymodem->dataCount  = 0;
-          ymodem->code       = YmodemCodeNone;
-          ymodem->stage      = YmodemStageNone;
+          timeCount  = 0;
+          errorCount = 0;
+          dataCount  = 0;
+          code       = CodeNone;
+          stage      = StageNone;
 
-          for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+          for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
           {
-            ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+            txBuffer[txLength] = CodeCan;
           }
 
-          ymodem->write(ymodem->txBuffer, ymodem->txLength);
+          write(txBuffer, txLength);
         }
       }
 
       break;
     }
 
-    case YmodemCodeA1:
-    case YmodemCodeA2:
-    case YmodemCodeCan:
+    case CodeA1:
+    case CodeA2:
+    case CodeCan:
     {
-      ymodem->timeCount  = 0;
-      ymodem->errorCount = 0;
-      ymodem->dataCount  = 0;
-      ymodem->code       = YmodemCodeNone;
-      ymodem->stage      = YmodemStageNone;
-      ymodem->callback(YmodemStatusAbort, NULL, NULL);
+      timeCount  = 0;
+      errorCount = 0;
+      dataCount  = 0;
+      code       = CodeNone;
+      stage      = StageNone;
+      callback(StatusAbort, NULL, NULL);
 
       break;
     }
 
     default:
     {
-      ymodem->timeCount++;
+      timeCount++;
 
-      if((ymodem->timeCount / (ymodem->timeDivide + 1)) > ymodem->timeMax)
+      if((timeCount / (timeDivide + 1)) > timeMax)
       {
-        ymodem->timeCount  = 0;
-        ymodem->errorCount = 0;
-        ymodem->dataCount  = 0;
-        ymodem->code       = YmodemCodeNone;
-        ymodem->stage      = YmodemStageNone;
+        timeCount  = 0;
+        errorCount = 0;
+        dataCount  = 0;
+        code       = CodeNone;
+        stage      = StageNone;
 
-        for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+        for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
         {
-          ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+          txBuffer[txLength] = CodeCan;
         }
 
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
-        ymodem->callback(YmodemStatusError, NULL, NULL);
+        write(txBuffer, txLength);
+        callback(StatusError, NULL, NULL);
       }
-      else if((ymodem->timeCount % (ymodem->timeDivide + 1)) == 0)
+      else if((timeCount % (timeDivide + 1)) == 0)
       {
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
+        write(txBuffer, txLength);
       }
     }
   }
 }
 
 /**
-  * @brief  Ymodem transmit finishing stage.
-  * @param  [in] ymodem: The ymodem to be transmitted.
+  * @brief  Transmit finishing stage.
+  * @param  None.
   * @return None.
   */
-static void YmodemTransmitStageFinishing(Ymodem *ymodem)
+void Ymodem::transmitStageFinishing()
 {
-  switch(YmodemReceivePacket(ymodem))
+  switch(receivePacket())
   {
-    case YmodemCodeNak:
+    case CodeNak:
     {
-      ymodem->timeCount   = 0;
-      ymodem->errorCount  = 0;
-      ymodem->dataCount   = 0;
-      ymodem->code        = YmodemCodeNone;
-      ymodem->stage       = YmodemStageFinishing;
-      ymodem->txBuffer[0] = YmodemCodeEot;
-      ymodem->txLength    = 1;
-      ymodem->write(ymodem->txBuffer, ymodem->txLength);
+      timeCount   = 0;
+      errorCount  = 0;
+      dataCount   = 0;
+      code        = CodeNone;
+      stage       = StageFinishing;
+      txBuffer[0] = CodeEot;
+      txLength    = 1;
+      write(txBuffer, txLength);
 
       break;
     }
 
-    case YmodemCodeC:
+    case CodeC:
     {
-      memset(&(ymodem->txBuffer[YMODEM_PACKET_HEADER]), NULL, YMODEM_PACKET_SIZE);
-      uint16_t crc = YmodemCRC16(&(ymodem->txBuffer[YMODEM_PACKET_HEADER]), YMODEM_PACKET_SIZE);
+      memset(&(txBuffer[YMODEM_PACKET_HEADER]), NULL, YMODEM_PACKET_SIZE);
+      uint16_t crc = crc16(&(txBuffer[YMODEM_PACKET_HEADER]), YMODEM_PACKET_SIZE);
 
-      ymodem->timeCount                                                 = 0;
-      ymodem->errorCount                                                = 0;
-      ymodem->dataCount                                                 = 0;
-      ymodem->code                                                      = YmodemCodeNone;
-      ymodem->stage                                                     = YmodemStageFinished;
-      ymodem->txBuffer[0]                                               = YmodemCodeSoh;
-      ymodem->txBuffer[1]                                               = 0x00;
-      ymodem->txBuffer[2]                                               = 0xFF;
-      ymodem->txBuffer[YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD - 2] = (uint8_t)(crc >> 8);
-      ymodem->txBuffer[YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD - 1] = (uint8_t)(crc >> 0);
-      ymodem->txLength                                                  = YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD;
-      ymodem->write(ymodem->txBuffer, ymodem->txLength);
+      timeCount                                                 = 0;
+      errorCount                                                = 0;
+      dataCount                                                 = 0;
+      code                                                      = CodeNone;
+      stage                                                     = StageFinished;
+      txBuffer[0]                                               = CodeSoh;
+      txBuffer[1]                                               = 0x00;
+      txBuffer[2]                                               = 0xFF;
+      txBuffer[YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD - 2] = (uint8_t)(crc >> 8);
+      txBuffer[YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD - 1] = (uint8_t)(crc >> 0);
+      txLength                                                  = YMODEM_PACKET_SIZE + YMODEM_PACKET_OVERHEAD;
+      write(txBuffer, txLength);
 
       break;
     }
 
-    case YmodemCodeA1:
-    case YmodemCodeA2:
-    case YmodemCodeCan:
+    case CodeA1:
+    case CodeA2:
+    case CodeCan:
     {
-      ymodem->timeCount  = 0;
-      ymodem->errorCount = 0;
-      ymodem->dataCount  = 0;
-      ymodem->code       = YmodemCodeNone;
-      ymodem->stage      = YmodemStageNone;
-      ymodem->callback(YmodemStatusAbort, NULL, NULL);
+      timeCount  = 0;
+      errorCount = 0;
+      dataCount  = 0;
+      code       = CodeNone;
+      stage      = StageNone;
+      callback(StatusAbort, NULL, NULL);
 
       break;
     }
 
     default:
     {
-      ymodem->timeCount++;
+      timeCount++;
 
-      if((ymodem->timeCount / (ymodem->timeDivide + 1)) > ymodem->timeMax)
+      if((timeCount / (timeDivide + 1)) > timeMax)
       {
-        ymodem->timeCount  = 0;
-        ymodem->errorCount = 0;
-        ymodem->dataCount  = 0;
-        ymodem->code       = YmodemCodeNone;
-        ymodem->stage      = YmodemStageNone;
+        timeCount  = 0;
+        errorCount = 0;
+        dataCount  = 0;
+        code       = CodeNone;
+        stage      = StageNone;
 
-        for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+        for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
         {
-          ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+          txBuffer[txLength] = CodeCan;
         }
 
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
-        ymodem->callback(YmodemStatusError, NULL, NULL);
+        write(txBuffer, txLength);
+        callback(StatusError, NULL, NULL);
       }
-      else if((ymodem->timeCount % (ymodem->timeDivide + 1)) == 0)
+      else if((timeCount % (timeDivide + 1)) == 0)
       {
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
+        write(txBuffer, txLength);
       }
     }
   }
 }
 
 /**
-  * @brief  Ymodem transmit finished stage.
-  * @param  [in] ymodem: The ymodem to be transmitted.
+  * @brief  Transmit finished stage.
+  * @param  None.
   * @return None.
   */
-static void YmodemTransmitStageFinished(Ymodem *ymodem)
+void Ymodem::transmitStageFinished()
 {
-  switch(YmodemReceivePacket(ymodem))
+  switch(receivePacket())
   {
-    case YmodemCodeC:
-    case YmodemCodeNak:
+    case CodeC:
+    case CodeNak:
     {
-      ymodem->errorCount++;
+      errorCount++;
 
-      if(ymodem->errorCount > ymodem->errorMax)
+      if(errorCount > errorMax)
       {
-        ymodem->timeCount  = 0;
-        ymodem->errorCount = 0;
-        ymodem->dataCount  = 0;
-        ymodem->code       = YmodemCodeNone;
-        ymodem->stage      = YmodemStageNone;
+        timeCount  = 0;
+        errorCount = 0;
+        dataCount  = 0;
+        code       = CodeNone;
+        stage      = StageNone;
 
-        for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+        for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
         {
-          ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+          txBuffer[txLength] = CodeCan;
         }
 
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
-        ymodem->callback(YmodemStatusError, NULL, NULL);
+        write(txBuffer, txLength);
+        callback(StatusError, NULL, NULL);
       }
       else
       {
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
+        write(txBuffer, txLength);
       }
 
       break;
     }
 
-    case YmodemCodeAck:
+    case CodeAck:
     {
-      ymodem->timeCount  = 0;
-      ymodem->errorCount = 0;
-      ymodem->dataCount  = 0;
-      ymodem->code       = YmodemCodeNone;
-      ymodem->stage      = YmodemStageNone;
-      ymodem->callback(YmodemStatusFinish, NULL, NULL);
+      timeCount  = 0;
+      errorCount = 0;
+      dataCount  = 0;
+      code       = CodeNone;
+      stage      = StageNone;
+      callback(StatusFinish, NULL, NULL);
 
       break;
     }
 
-    case YmodemCodeA1:
-    case YmodemCodeA2:
-    case YmodemCodeCan:
+    case CodeA1:
+    case CodeA2:
+    case CodeCan:
     {
-      ymodem->timeCount  = 0;
-      ymodem->errorCount = 0;
-      ymodem->dataCount  = 0;
-      ymodem->code       = YmodemCodeNone;
-      ymodem->stage      = YmodemStageNone;
-      ymodem->callback(YmodemStatusAbort, NULL, NULL);
+      timeCount  = 0;
+      errorCount = 0;
+      dataCount  = 0;
+      code       = CodeNone;
+      stage      = StageNone;
+      callback(StatusAbort, NULL, NULL);
 
       break;
     }
 
     default:
     {
-      ymodem->timeCount++;
+      timeCount++;
 
-      if((ymodem->timeCount / (ymodem->timeDivide + 1)) > ymodem->timeMax)
+      if((timeCount / (timeDivide + 1)) > timeMax)
       {
-        ymodem->timeCount  = 0;
-        ymodem->errorCount = 0;
-        ymodem->dataCount  = 0;
-        ymodem->code       = YmodemCodeNone;
-        ymodem->stage      = YmodemStageNone;
+        timeCount  = 0;
+        errorCount = 0;
+        dataCount  = 0;
+        code       = CodeNone;
+        stage      = StageNone;
 
-        for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
+        for(txLength = 0; txLength < YMODEM_CODE_CAN_NUMBER; txLength++)
         {
-          ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
+          txBuffer[txLength] = CodeCan;
         }
 
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
-        ymodem->callback(YmodemStatusError, NULL, NULL);
+        write(txBuffer, txLength);
+        callback(StatusError, NULL, NULL);
       }
-      else if((ymodem->timeCount % (ymodem->timeDivide + 1)) == 0)
+      else if((timeCount % (timeDivide + 1)) == 0)
       {
-        ymodem->write(ymodem->txBuffer, ymodem->txLength);
+        write(txBuffer, txLength);
       }
     }
   }
 }
 
 /**
-  * @brief  Calculate ymodem CRC16 checksum.
+  * @brief  Calculate CRC16 checksum.
   * @param  [in] buff: The data to be calculated.
   * @param  [in] len:  The length of the data to be calculated.
   * @return Calculated CRC16 checksum.
   */
-static uint16_t YmodemCRC16(uint8_t *buff, uint32_t len)
+uint16_t Ymodem::crc16(uint8_t *buff, uint32_t len)
 {
   uint16_t crc = 0;
 
@@ -1601,127 +1788,4 @@ static uint16_t YmodemCRC16(uint8_t *buff, uint32_t len)
   }
 
   return crc;
-}
-
-/**
-  * @brief  Ymodem receive.
-  * @param  [in] ymodem: The ymodem to be receive.
-  * @return None.
-  */
-void YmodemReceive(Ymodem *ymodem)
-{
-  switch(ymodem->stage)
-  {
-    case YmodemStageNone:
-    {
-      YmodemReceiveStageNone(ymodem);
-
-      break;
-    }
-
-    case YmodemStageEstablishing:
-    {
-      YmodemReceiveStageEstablishing(ymodem);
-
-      break;
-    }
-
-    case YmodemStageEstablished:
-    {
-      YmodemReceiveStageEstablished(ymodem);
-
-      break;
-    }
-
-    case YmodemStageTransmitting:
-    {
-      YmodemReceiveStageTransmitting(ymodem);
-
-      break;
-    }
-
-    case YmodemStageFinishing:
-    {
-      YmodemReceiveStageFinishing(ymodem);
-
-      break;
-    }
-
-    default:
-    {
-      YmodemReceiveStageFinished(ymodem);
-    }
-  }
-}
-
-/**
-  * @brief  Ymodem transmit.
-  * @param  [in] ymodem: The ymodem to be transmit.
-  * @return None.
-  */
-void YmodemTransmit(Ymodem *ymodem)
-{
-  switch(ymodem->stage)
-  {
-    case YmodemStageNone:
-    {
-      YmodemTransmitStageNone(ymodem);
-
-      break;
-    }
-
-    case YmodemStageEstablishing:
-    {
-      YmodemTransmitStageEstablishing(ymodem);
-
-      break;
-    }
-
-    case YmodemStageEstablished:
-    {
-      YmodemTransmitStageEstablished(ymodem);
-
-      break;
-    }
-
-    case YmodemStageTransmitting:
-    {
-      YmodemTransmitStageTransmitting(ymodem);
-
-      break;
-    }
-
-    case YmodemStageFinishing:
-    {
-      YmodemTransmitStageFinishing(ymodem);
-
-      break;
-    }
-
-    default:
-    {
-      YmodemTransmitStageFinished(ymodem);
-    }
-  }
-}
-
-/**
-  * @brief  Abort ymodem transmission.
-  * @param  [in] ymodem: The ymodem to be abort.
-  * @return None.
-  */
-void YmodemAbort(Ymodem *ymodem)
-{
-  ymodem->timeCount  = 0;
-  ymodem->errorCount = 0;
-  ymodem->dataCount  = 0;
-  ymodem->code       = YmodemCodeNone;
-  ymodem->stage      = YmodemStageNone;
-
-  for(ymodem->txLength = 0; ymodem->txLength < ymodem->canNum; ymodem->txLength++)
-  {
-    ymodem->txBuffer[ymodem->txLength] = YmodemCodeCan;
-  }
-
-  ymodem->write(ymodem->txBuffer, ymodem->txLength);
 }

@@ -25,8 +25,8 @@ private slots:
     void on_receiveButton_clicked();
     void transmitProgress(int progress);
     void receiveProgress(int progress);
-    void transmitStatus(YmodemStatus status);
-    void receiveStatus(YmodemStatus status);
+    void transmitStatus(YmodemFileTransmit::Status status);
+    void receiveStatus(YmodemFileReceive::Status status);
 
 private:
     Ui::Widget *ui;

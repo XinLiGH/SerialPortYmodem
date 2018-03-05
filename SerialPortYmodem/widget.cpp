@@ -32,8 +32,8 @@ Widget::Widget(QWidget *parent) :
 
     connect(ymodemFileTransmit, SIGNAL(transmitProgress(int)), this, SLOT(transmitProgress(int)));
     connect(ymodemFileReceive, SIGNAL(receiveProgress(int)), this, SLOT(receiveProgress(int)));
-    connect(ymodemFileTransmit, SIGNAL(transmitStatus(YmodemStatus)), this, SLOT(transmitStatus(YmodemStatus)));
-    connect(ymodemFileReceive, SIGNAL(receiveStatus(YmodemStatus)), this, SLOT(receiveStatus(YmodemStatus)));
+    connect(ymodemFileTransmit, SIGNAL(transmitStatus(YmodemFileTransmit::Status)), this, SLOT(transmitStatus(YmodemFileTransmit::Status)));
+    connect(ymodemFileReceive, SIGNAL(receiveStatus(YmodemFileReceive::Status)), this, SLOT(receiveStatus(YmodemFileReceive::Status)));
 }
 
 Widget::~Widget()
@@ -203,21 +203,21 @@ void Widget::receiveProgress(int progress)
     ui->receiveProgress->setValue(progress);
 }
 
-void Widget::transmitStatus(YmodemStatus status)
+void Widget::transmitStatus(Ymodem::Status status)
 {
     switch(status)
     {
-        case YmodemStatusEstablish:
+        case YmodemFileTransmit::StatusEstablish:
         {
             break;
         }
 
-        case YmodemStatusTransmit:
+        case YmodemFileTransmit::StatusTransmit:
         {
             break;
         }
 
-        case YmodemStatusFinish:
+        case YmodemFileTransmit::StatusFinish:
         {
             transmitButtonStatus = false;
 
@@ -238,7 +238,7 @@ void Widget::transmitStatus(YmodemStatus status)
             break;
         }
 
-        case YmodemStatusAbort:
+        case YmodemFileTransmit::StatusAbort:
         {
             transmitButtonStatus = false;
 
@@ -259,7 +259,7 @@ void Widget::transmitStatus(YmodemStatus status)
             break;
         }
 
-        case YmodemStatusTimeout:
+        case YmodemFileTransmit::StatusTimeout:
         {
             transmitButtonStatus = false;
 
@@ -301,21 +301,21 @@ void Widget::transmitStatus(YmodemStatus status)
     }
 }
 
-void Widget::receiveStatus(YmodemStatus status)
+void Widget::receiveStatus(YmodemFileReceive::Status status)
 {
     switch(status)
     {
-        case YmodemStatusEstablish:
+        case YmodemFileReceive::StatusEstablish:
         {
             break;
         }
 
-        case YmodemStatusTransmit:
+        case YmodemFileReceive::StatusTransmit:
         {
             break;
         }
 
-        case YmodemStatusFinish:
+        case YmodemFileReceive::StatusFinish:
         {
             receiveButtonStatus = false;
 
@@ -336,7 +336,7 @@ void Widget::receiveStatus(YmodemStatus status)
             break;
         }
 
-        case YmodemStatusAbort:
+        case YmodemFileReceive::StatusAbort:
         {
             receiveButtonStatus = false;
 
@@ -357,7 +357,7 @@ void Widget::receiveStatus(YmodemStatus status)
             break;
         }
 
-        case YmodemStatusTimeout:
+        case YmodemFileReceive::StatusTimeout:
         {
             receiveButtonStatus = false;
 

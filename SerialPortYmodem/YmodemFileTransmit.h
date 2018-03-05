@@ -24,18 +24,18 @@ public:
     void stopTransmit();
 
     int getTransmitProgress();
-    YmodemStatus getTransmitStatus();
+    Status getTransmitStatus();
 
 signals:
     void transmitProgress(int progress);
-    void transmitStatus(YmodemStatus status);
+    void transmitStatus(YmodemFileTransmit::Status status);
 
 private slots:
     void readTimeOut();
     void writeTimeOut();
 
 private:
-    YmodemCode callback(YmodemStatus status, uint8_t *buff, uint32_t *len);
+    Code callback(Status status, uint8_t *buff, uint32_t *len);
 
     uint32_t read(uint8_t *buff, uint32_t len);
     uint32_t write(uint8_t *buff, uint32_t len);
@@ -45,10 +45,10 @@ private:
     QTimer      *writeTimer;
     QSerialPort *serialPort;
 
-    int          progress;
-    YmodemStatus status;
-    uint64_t     fileSize;
-    uint64_t     fileCount;
+    int      progress;
+    Status   status;
+    uint64_t fileSize;
+    uint64_t fileCount;
 };
 
 #endif // YMODEMFILETRANSMIT_H

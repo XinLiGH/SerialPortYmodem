@@ -10,11 +10,9 @@ YmodemFileReceive::YmodemFileReceive(QObject *parent) :
     writeTimer(new QTimer),
     serialPort(new QSerialPort)
 {
-    canNum     = 5;
-    timeDivide = 499;
-    timeMax    = 12;
-    errorMax   = 999;
-    stage      = YmodemStageNone;
+    setTimeDivide(499);
+    setTimeMax(5);
+    setErrorMax(999);
 
     serialPort->setPortName("COM1");
     serialPort->setBaudRate(115200);
@@ -53,7 +51,7 @@ void YmodemFileReceive::setPortBaudRate(qint32 baudrate)
 bool YmodemFileReceive::startReceive()
 {
     progress = 0;
-    status   = YmodemStatusEstablish;
+    status   = StatusEstablish;
 
     if(serialPort->open(QSerialPort::ReadWrite) == true)
     {
@@ -70,8 +68,8 @@ bool YmodemFileReceive::startReceive()
 void YmodemFileReceive::stopReceive()
 {
     file->close();
-    YmodemAbort(this);
-    status = YmodemStatusAbort;
+    abort();
+    status = StatusAbort;
     writeTimer->start(WRITE_TIME_OUT);
 }
 
@@ -80,7 +78,7 @@ int YmodemFileReceive::getReceiveProgress()
     return progress;
 }
 
-YmodemStatus YmodemFileReceive::getReceiveStatus()
+Ymodem::Status YmodemFileReceive::getReceiveStatus()
 {
     return status;
 }
@@ -89,9 +87,9 @@ void YmodemFileReceive::readTimeOut()
 {
     readTimer->stop();
 
-    YmodemReceive(this);
+    receive();
 
-    if((status == YmodemStatusEstablish) || (status == YmodemStatusTransmit))
+    if((status == StatusEstablish) || (status == StatusTransmit))
     {
         readTimer->start(READ_TIME_OUT);
     }
@@ -100,18 +98,15 @@ void YmodemFileReceive::readTimeOut()
 void YmodemFileReceive::writeTimeOut()
 {
     writeTimer->stop();
-
     serialPort->close();
-    serialPort->clear();
-
     receiveStatus(status);
 }
 
-YmodemCode YmodemFileReceive::callback(YmodemStatus status, uint8_t *buff, uint32_t *len)
+Ymodem::Code YmodemFileReceive::callback(Status status, uint8_t *buff, uint32_t *len)
 {
     switch(status)
     {
-        case YmodemStatusEstablish:
+        case StatusEstablish:
         {
             if(buff[0] != 0)
             {
@@ -139,32 +134,32 @@ YmodemCode YmodemFileReceive::callback(YmodemStatus status, uint8_t *buff, uint3
 
                 if(file->open(QFile::WriteOnly) == true)
                 {
-                    YmodemFileReceive::status = YmodemStatusEstablish;
+                    YmodemFileReceive::status = StatusEstablish;
 
-                    receiveStatus(YmodemStatusEstablish);
+                    receiveStatus(StatusEstablish);
 
-                    return YmodemCodeAck;
+                    return CodeAck;
                 }
                 else
                 {
-                    YmodemFileReceive::status = YmodemStatusError;
+                    YmodemFileReceive::status = StatusError;
 
                     writeTimer->start(WRITE_TIME_OUT);
 
-                    return YmodemCodeCan;
+                    return CodeCan;
                 }
             }
             else
             {
-                YmodemFileReceive::status = YmodemStatusError;
+                YmodemFileReceive::status = StatusError;
 
                 writeTimer->start(WRITE_TIME_OUT);
 
-                return YmodemCodeCan;
+                return CodeCan;
             }
         }
 
-        case YmodemStatusTransmit:
+        case StatusTransmit:
         {
             if((fileSize - fileCount) > *len)
             {
@@ -181,54 +176,54 @@ YmodemCode YmodemFileReceive::callback(YmodemStatus status, uint8_t *buff, uint3
 
             progress = (int)(fileCount * 100 / fileSize);
 
-            YmodemFileReceive::status = YmodemStatusTransmit;
+            YmodemFileReceive::status = StatusTransmit;
 
             receiveProgress(progress);
-            receiveStatus(YmodemStatusTransmit);
+            receiveStatus(StatusTransmit);
 
-            return YmodemCodeAck;
+            return CodeAck;
         }
 
-        case YmodemStatusFinish:
+        case StatusFinish:
         {
             file->close();
 
-            YmodemFileReceive::status = YmodemStatusFinish;
+            YmodemFileReceive::status = StatusFinish;
 
             writeTimer->start(WRITE_TIME_OUT);
 
-            return YmodemCodeAck;
+            return CodeAck;
         }
 
-        case YmodemStatusAbort:
+        case StatusAbort:
         {
             file->close();
 
-            YmodemFileReceive::status = YmodemStatusAbort;
+            YmodemFileReceive::status = StatusAbort;
 
             writeTimer->start(WRITE_TIME_OUT);
 
-            return YmodemCodeCan;
+            return CodeCan;
         }
 
-        case YmodemStatusTimeout:
+        case StatusTimeout:
         {
-            YmodemFileReceive::status = YmodemStatusTimeout;
+            YmodemFileReceive::status = StatusTimeout;
 
             writeTimer->start(WRITE_TIME_OUT);
 
-            return YmodemCodeCan;
+            return CodeCan;
         }
 
         default:
         {
             file->close();
 
-            YmodemFileReceive::status = YmodemStatusError;
+            YmodemFileReceive::status = StatusError;
 
             writeTimer->start(WRITE_TIME_OUT);
 
-            return YmodemCodeCan;
+            return CodeCan;
         }
     }
 }
