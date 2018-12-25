@@ -1,4 +1,4 @@
-﻿#include "YmodemFileReceive.h"
+#include "YmodemFileReceive.h"
 
 #define READ_TIME_OUT   (10)
 #define WRITE_TIME_OUT  (100)
@@ -127,7 +127,9 @@ Ymodem::Code YmodemFileReceive::callback(Status status, uint8_t *buff, uint32_t 
                 }
 
                 fileName  = QString::fromLocal8Bit(name);
-                fileSize  = QString(size).toULongLong();
+                QString file_desc(size);
+                QString sizeStr = file_desc.left(file_desc.indexOf(' '));
+                fileSize  = sizeStr.toULongLong();
                 fileCount = 0;
 
                 file->setFileName(filePath + fileName);
